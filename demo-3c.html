@@ -550,6 +550,10 @@ window.addEventListener('unhandledrejection',function(e){
 <script src="levels/level_2.js"></script>
 <script src="levels/level_3.js"></script>
 <script src="map_atlas.js"></script>
+<!-- 核心系统（最先加载） -->
+<script src="core/event_bus.js"></script>
+<script src="core/save_system.js"></script>
+<script src="core/relic_system.js"></script>
 <!-- Lucia Boss（多阶段 32 动画） -->
 <script src="bosses/lucia_src.js"></script>
 <script src="bosses/lucia_boss.js"></script>
@@ -1637,6 +1641,8 @@ function defendBlock(dmgX, dmgY){
   if(currentChar === 3 && window.role3 && typeof window.role3.onIBlock === 'function'){
     window.role3.onIBlock();
   }
+  // 法宝系统：格挡事件
+  if(window.Events) window.Events.emit('player:block', isPerfect);
 
   // role3 专属：完美格挡触发飞剑反击 + 获得 1 把剑
   if(isPerfect && currentChar === 3){
@@ -3928,6 +3934,8 @@ function update(dt){
           // role3 连携：冲刺命中计数（K轴：每2次→B，每2次B→L）
           if(typeof window.role3.onKHit === 'function') window.role3.onKHit();
         }
+        // 法宝系统：冲刺命中事件
+        if(window.Events) window.Events.emit('player:dash_hit');
         // 大招期间冲刺命中 → 切割特效
         if(ult.active){
           const bA=Math.atan2(player.dashVy,player.dashVx);
@@ -4108,6 +4116,8 @@ function update(dt){
   }
   // role3 技能 CD
   if(window.role3 && typeof window.role3.update === 'function') window.role3.update(dt);
+  // 法宝系统每帧更新（道法 onUpdate 等）
+  if(window.RelicManager) window.RelicManager.update(dt);
   updatePhaseTransit(dt);
   // 屏幕红闪衰减
   if(screenFlashR>0) screenFlashR=Math.max(0,screenFlashR-dt*4);

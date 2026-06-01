@@ -417,7 +417,24 @@ window.role3 = {
     used.trail = [];
     used.returnTo = player;
 
-    if(typeof _addFxShape === 'function'){
+    // 法宝：分形镜 —— 额外射一把（偏角±0.2rad，伤害×0.6）
+    if(window.RelicManager && window.RelicManager._flags.split){
+      const extraOrbits = role3SwordsAPI.getOrbits();
+      if(extraOrbits.length > 0){
+        const ex = extraOrbits[0];
+        ex.state = 'shoot';
+        ex.shootAngle = angle + (Math.random() > 0.5 ? 0.2 : -0.2);
+        ex.shootSpd = spd;
+        ex.dmg = Math.max(1, Math.floor(dmg * 0.6));
+        ex.kx = Math.cos(ex.shootAngle) * 160;
+        ex.ky = Math.sin(ex.shootAngle) * 160;
+        ex.age = 0; ex.life = 0.32;
+        ex._hitMap = {}; ex._hitTimer = 0;
+        ex._comboTag = 1; ex.trail = [];
+        ex.returnTo = player;
+        ex._temp = true; // 分形镜额外剑不参与飞剑数量
+      }
+    }
       const fxX = sx + Math.cos(angle) * 20;
       const fxY = sy + Math.sin(angle) * 20;
       _addFxShape('crescent', fxX, fxY, {

@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>法宝系统调试面板 · 莫克夏回声</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0f;
+    color: #ddd;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    padding: 16px;
+  }
+  h1 { color: #AAEEFF; font-size: 18px; margin-bottom: 4px; }
+  .subtitle { color: #556; font-size: 11px; margin-bottom: 20px; }
+
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .panel {
+    background: #111118;
+    border: 1px solid #2a2a3a;
+    border-radius: 6px;
+    padding: 14px;
+    min-width: 280px;
+    flex: 1;
+  }
+  .panel h2 { color: #FFD080; font-size: 13px; margin-bottom: 12px; border-bottom: 1px solid #2a2a3a; padding-bottom: 6px; }
+
+  /* 法宝卡片网格 */
+  .relic-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .relic-card {
+    background: #181824;
+    border: 1px solid #333;
+    border-radius: 5px;
+    padding: 8px 10px;
+    cursor: pointer;
+    width: 130px;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+  }
+  .relic-card:hover { border-color: #AAEEFF; background: #1e1e2e; }
+  .relic-card.equipped { border-color: #4CAF50; background: #0d1a0d; }
+  .relic-card.equipped::after {
+    content: '✓';
+    position: absolute; top: 4px; right: 6px;
+    color: #4CAF50; font-size: 11px;
+  }
+  .relic-card .icon { font-size: 22px; display: block; margin-bottom: 4px; }
+  .relic-card .name { color: #eee; font-size: 12px; font-weight: bold; }
+  .relic-card .desc { color: #778; font-size: 10px; margin-top: 2px; line-height: 1.4; }
+  .relic-card .rarity-common  { color: #aaa; font-size: 9px; }
+  .relic-card .rarity-rare    { color: #AAEEFF; font-size: 9px; }
+  .relic-card .rarity-legendary { color: #FFD080; font-size: 9px; }
+
+  /* 背包 */
+  .inventory {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;
+  }
+  .inv-slot {
+    width: 56px; height: 56px;
+    background: #0d0d18;
+    border: 1px dashed #334;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    position: relative;
+    cursor: default;
+  }
+  .inv-slot.filled { border-style: solid; border-color: #446; background: #151525; }
+  .inv-slot .slot-name {
+    position: absolute; bottom: -14px; left: 0; right: 0;
+    text-align: center; font-size: 9px; color: #556; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .inv-slot .remove-btn {
+    position: absolute; top: -6px; right: -6px;
+    width: 14px; height: 14px;
+    background: #c0392b; border-radius: 50%;
+    font-size: 9px; color: white;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; line-height: 1;
+  }
+  .inv-slot .remove-btn:hover { background: #e74c3c; }
+
+  /* 道法 */
+  .combo-list { list-style: none; }
+  .combo-item {
+    padding: 8px 10px; margin-bottom: 6px;
+    border-radius: 4px;
+    border: 1px solid #333;
+    background: #0d0d18;
+    transition: all 0.3s;
+  }
+  .combo-item.active {
+    border-color: #FFD080;
+    background: #1a1500;
+    animation: comboGlow 1.5s ease-in-out infinite alternate;
+  }
+  @keyframes comboGlow {
+    from { box-shadow: 0 0 4px rgba(255,208,128,0.3); }
+    to   { box-shadow: 0 0 12px rgba(255,208,128,0.7); }
+  }
+  .combo-item .combo-name { color: #FFD080; font-weight: bold; font-size: 12px; }
+  .combo-item .combo-req  { color: #556; font-size: 10px; margin-top: 2px; }
+  .combo-item .combo-desc { color: #889; font-size: 10px; margin-top: 3px; }
+  .combo-item .combo-status {
+    float: right; font-size: 10px;
+    color: #4CAF50;
+  }
+  .combo-item:not(.active) .combo-status { color: #556; }
+
+  /* 统计 */
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .stat-item { background: #0d0d18; border-radius: 4px; padding: 8px; }
+  .stat-item .val { font-size: 24px; color: #AAEEFF; font-weight: bold; }
+  .stat-item .key { font-size: 10px; color: #556; margin-top: 2px; }
+
+  /* Flags */
+  .flag-list { font-size: 11px; line-height: 1.8; }
+  .flag-list .flag-key { color: #889; }
+  .flag-list .flag-val { color: #AAEEFF; margin-left: 6px; }
+  .flag-list .flag-active { color: #4CAF50; }
+
+  /* 触发按钮 */
+  .trigger-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .trigger-btn {
+    padding: 6px 12px;
+    background: #1a1a2e;
+    border: 1px solid #334;
+    border-radius: 4px;
+    color: #aaa;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    transition: all 0.15s;
+  }
+  .trigger-btn:hover { background: #252540; border-color: #AAEEFF; color: #AAEEFF; }
+  .trigger-btn:active { background: #1a2a1a; border-color: #4CAF50; color: #4CAF50; }
+
+  /* 日志 */
+  .log-box {
+    background: #060608;
+    border: 1px solid #1a1a2a;
+    border-radius: 4px;
+    padding: 8px;
+    height: 160px;
+    overflow-y: auto;
+    font-size: 10px;
+    line-height: 1.6;
+  }
+  .log-line { color: #556; }
+  .log-line.info  { color: #AAEEFF; }
+  .log-line.good  { color: #4CAF50; }
+  .log-line.warn  { color: #FFD080; }
+  .log-line.combo { color: #FF80FF; font-weight: bold; }
+
+  /* 说明 */
+  .help {
+    background: #0d0d18;
+    border-left: 3px solid #AAEEFF;
+    padding: 8px 12px;
+    margin-top: 16px;
+    font-size: 11px;
+    color: #778;
+    line-height: 1.8;
+  }
+  .help b { color: #AAEEFF; }
+</style>
+</head>
+<body>
+
+<h1>⚔ 法宝系统调试面板</h1>
+<p class="subtitle">V1.0 · 独立测试 · 无需游戏运行 · 验收标准见底部</p>
+
+<div class="row">
+
+  <!-- 左：法宝数据库 -->
+  <div class="panel" style="min-width:340px">
+    <h2>法宝数据库（点击装备/卸下）</h2>
+    <div id="relic-grid" class="relic-grid"></div>
+  </div>
+
+  <!-- 中：背包 + 道法 -->
+  <div class="panel" style="min-width:240px; flex:0.8">
+    <h2>背包（<span id="inv-count">0</span>/6 格）</h2>
+    <div id="inventory" class="inventory"></div>
+
+    <h2 style="margin-top:20px">道法激活状态</h2>
+    <ul id="combo-list" class="combo-list"></ul>
+  </div>
+
+  <!-- 右：效果Flags + 统计 -->
+  <div class="panel" style="min-width:220px; flex:0.7">
+    <h2>飞剑效果 Flags</h2>
+    <div id="flag-list" class="flag-list"></div>
+
+    <h2 style="margin-top:16px">本局统计</h2>
+    <div id="stats-grid" class="stats-grid"></div>
+  </div>
+
+</div>
+
+<!-- 触发模拟 + 日志 -->
+<div class="panel" style="margin-top:16px">
+  <h2>模拟触发（测试钩子）</h2>
+  <div class="trigger-row">
+    <button class="trigger-btn" onclick="simulateHit()">⚔ 飞剑命中 Boss (dmg=22)</button>
+    <button class="trigger-btn" onclick="simulateBlock(false)">🛡 普通格挡</button>
+    <button class="trigger-btn" onclick="simulateBlock(true)">🛡✨ 完美格挡</button>
+    <button class="trigger-btn" onclick="simulateDash(true)">💨 冲刺命中</button>
+    <button class="trigger-btn" onclick="simulateDash(false)">💨 冲刺未命中</button>
+    <button class="trigger-btn" onclick="simulateKill()">💀 Boss击杀</button>
+    <button class="trigger-btn" onclick="RelicManager.reset(); refreshAll(); addLog('🔄 已重置背包', 'warn')">🔄 重置</button>
+    <button class="trigger-btn" onclick="RelicManager.debugDump()">📋 控制台Dump</button>
+  </div>
+
+  <div style="margin-top:12px">
+    <div style="color:#556; font-size:10px; margin-bottom:4px">事件日志</div>
+    <div id="log-box" class="log-box"></div>
+  </div>
+</div>
+
+<!-- 验收标准 -->
+<div class="help">
+  <b>V1.0 法宝系统验收标准：</b><br>
+  ✅ 1. 所有11个法宝可以装备/卸下，背包上限6格<br>
+  ✅ 2. 装备同一法宝两次可以（split_mirror×2 触发万剑诀）<br>
+  ✅ 3. 道法自动检测：装备 磁石灵核+轮回刃 → 归元剑激活，日志出现<br>
+  ✅ 4. 卸下道法材料法宝后，道法自动失活<br>
+  ✅ 5. triggerHit → 劈雷印 onHit 触发，stats.relicHits 递增<br>
+  ✅ 6. triggerBlock(true) → stats.blocksTriggered 递增<br>
+  ✅ 7. reset() 后背包清空，Flags归零，Stats归零<br>
+  ✅ 8. Flags面板实时反映装备状态（tracking/piercing/bounce等）<br>
+  ✅ 9. 万剑诀道法：装备 split_mirror+sword_heart，onUpdate 每0.8s日志一次自动射剑<br>
+  ✅ 10. 无控制台报错
+</div>
+
+<!-- 加载依赖 -->
+<script src="../core/event_bus.js"></script>
+<script src="../core/relic_system.js"></script>
+
+<script>
+// ─────────────────────────────────────────────
+// mock 游戏全局（让法宝 onEquip/onHit 不报错）
+// ─────────────────────────────────────────────
+window.player      = { hp: 10000, dashDur: 0.18 };
+window.playerHp    = 10000;
+window.playerMaxHp = 10000;
+window.role3       = { MAX_SWORDS: 8 };
+window.boss        = { x: 400, y: 280, state: 'idle', hp: 150000, maxHp: 150000 };
+window.DEF_PARRY_WINDOW = 0.18;
+window.hitBoss = function(dmg){ addLog('💥 hitBoss 被调用 dmg=' + dmg + ' (劈雷印触发)', 'info'); };
+window._addFxShape = function(){ /* mock */ };
+window.addParticle = function(){ /* mock */ };
+
+// mock role3SwordsAPI（万剑诀 onUpdate 用）
+window.role3SwordsAPI = {
+  getOrbits: function(){
+    return [{ state:'orbit', x:200, y:200, shootAngle:0, shootSpd:0, dmg:0, age:0, life:0, trail:[], _hitMap:{}, _hitTimer:0, returnTo:null }];
+  }
+};
+
+// ─────────────────────────────────────────────
+// 日志
+// ─────────────────────────────────────────────
+function addLog(msg, cls){
+  var box = document.getElementById('log-box');
+  var line = document.createElement('div');
+  line.className = 'log-line ' + (cls || '');
+  var ts = new Date().toLocaleTimeString('zh', {hour12:false});
+  line.textContent = '[' + ts + '] ' + msg;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ─────────────────────────────────────────────
+// Events 监听 → 日志
+// ─────────────────────────────────────────────
+Events.on('relic:equipped',    function(d){ addLog('✅ 装备法宝: ' + d.relic.name, 'good'); refreshAll(); });
+Events.on('relic:removed',     function(d){ addLog('➖ 移除法宝: ' + d.id, 'warn'); refreshAll(); });
+Events.on('combo:activated',   function(d){ addLog('🌟 道法激活: ' + d.combo.name + ' — ' + d.combo.desc, 'combo'); refreshAll(); });
+Events.on('combo:deactivated', function(d){ addLog('💤 道法失活: ' + d.id, 'warn'); refreshAll(); });
+Events.on('sword:hit_boss',    function(d){ addLog('⚔ [Event] sword:hit_boss dmg=' + d, 'info'); });
+Events.on('player:block',      function(d){ addLog('🛡 [Event] player:block isPerfect=' + d, 'info'); });
+Events.on('player:dash_hit',   function(){ addLog('💨 [Event] player:dash_hit', 'info'); });
+Events.on('boss:dead',         function(d){ addLog('💀 [Event] boss:dead id=' + (d && d.bossId), 'good'); });
+
+// ─────────────────────────────────────────────
+// 模拟触发
+// ─────────────────────────────────────────────
+function simulateHit(){
+  Events.emit('sword:hit_boss', 22);
+  addLog('→ triggerHit(22)');
+  refreshStats();
+}
+function simulateBlock(isPerfect){
+  Events.emit('player:block', isPerfect);
+  addLog('→ triggerBlock(' + isPerfect + ')');
+  refreshStats();
+}
+function simulateDash(hit){
+  Events.emit(hit ? 'player:dash_hit' : 'player:dash_miss');
+  addLog('→ triggerDash(' + hit + ')');
+  refreshStats();
+}
+function simulateKill(){
+  Events.emit('boss:dead', { bossId: 'lucia' });
+  addLog('→ triggerKill()');
+}
+
+// ─────────────────────────────────────────────
+// 渲染
+// ─────────────────────────────────────────────
+function renderRelicGrid(){
+  var grid = document.getElementById('relic-grid');
+  grid.innerHTML = '';
+  Object.values(RELIC_DB).forEach(function(relic){
+    var count = RelicManager.count(relic.id);
+    var card = document.createElement('div');
+    card.className = 'relic-card' + (count > 0 ? ' equipped' : '');
+    card.innerHTML =
+      '<span class="icon">' + relic.icon + '</span>' +
+      '<div class="name">' + relic.name + (count > 1 ? ' ×'+count : '') + '</div>' +
+      '<div class="rarity-' + relic.rarity + '">' + relic.rarity.toUpperCase() + '</div>' +
+      '<div class="desc">' + relic.desc + '</div>';
+    card.onclick = function(){
+      if(count > 0){
+        RelicManager.remove(relic.id);
+      } else {
+        if(!RelicManager.equip(relic.id)){
+          addLog('⚠ 背包已满，无法装备 ' + relic.name, 'warn');
+        }
+      }
+      refreshAll();
+    };
+    grid.appendChild(card);
+  });
+}
+
+function renderInventory(){
+  var inv = document.getElementById('inventory');
+  inv.innerHTML = '';
+  var items = RelicManager.getInventory();
+  document.getElementById('inv-count').textContent = items.length;
+
+  // 显示已装备
+  items.forEach(function(entry, i){
+    var slot = document.createElement('div');
+    slot.className = 'inv-slot filled';
+    slot.innerHTML =
+      entry.relic.icon +
+      '<div class="slot-name">' + entry.relic.name + '</div>' +
+      '<div class="remove-btn" title="卸下">×</div>';
+    slot.querySelector('.remove-btn').onclick = function(e){
+      e.stopPropagation();
+      RelicManager.remove(entry.relic.id);
+      refreshAll();
+    };
+    inv.appendChild(slot);
+  });
+
+  // 空格
+  for(var i = items.length; i < 6; i++){
+    var empty = document.createElement('div');
+    empty.className = 'inv-slot';
+    empty.textContent = '';
+    inv.appendChild(empty);
+  }
+}
+
+function renderCombos(){
+  var list = document.getElementById('combo-list');
+  list.innerHTML = '';
+  var active = RelicManager.getActiveCombos();
+  Object.values(COMBO_DB).forEach(function(combo){
+    var isActive = active.indexOf(combo.id) >= 0;
+    var li = document.createElement('li');
+    li.className = 'combo-item' + (isActive ? ' active' : '');
+
+    // 检查每个需求法宝的满足状态
+    var reqHtml = combo.requires.map(function(rid){
+      var has = RelicManager.has(rid);
+      var relic = RELIC_DB[rid];
+      var name = relic ? relic.name : rid;
+      return '<span style="color:' + (has ? '#4CAF50' : '#556') + '">' + (has ? '✓' : '○') + name + '</span>';
+    }).join(' + ');
+
+    li.innerHTML =
+      '<span class="combo-status">' + (isActive ? '激活 ✦' : '未激活') + '</span>' +
+      '<div class="combo-name">' + combo.icon + ' ' + combo.name + '</div>' +
+      '<div class="combo-req">' + reqHtml + '</div>' +
+      '<div class="combo-desc">' + combo.desc + '</div>';
+    list.appendChild(li);
+  });
+}
+
+function renderFlags(){
+  var box = document.getElementById('flag-list');
+  var flags = RelicManager._flags;
+  var keys = Object.keys(flags);
+  if(keys.length === 0){
+    box.innerHTML = '<span style="color:#334">（空）</span>';
+    return;
+  }
+  box.innerHTML = keys.map(function(k){
+    var v = flags[k];
+    var isActive = (v === true || (typeof v === 'number' && v > 0));
+    return '<span class="flag-key">' + k + '</span>' +
+           '<span class="flag-val ' + (isActive ? 'flag-active' : '') + '">' + JSON.stringify(v) + '</span>';
+  }).join('<br>');
+}
+
+function renderStats(){
+  var stats = RelicManager.getStats();
+  var box = document.getElementById('stats-grid');
+  var rows = [
+    ['飞剑命中', stats.relicHits],
+    ['格挡次数', stats.blocksTriggered],
+    ['道法触发', stats.combosTrigered],
+    ['冲刺命中', stats.dashHits]
+  ];
+  box.innerHTML = rows.map(function(r){
+    return '<div class="stat-item"><div class="val">' + r[1] + '</div><div class="key">' + r[0] + '</div></div>';
+  }).join('');
+}
+
+function refreshStats(){ renderStats(); renderFlags(); }
+function refreshAll(){
+  renderRelicGrid();
+  renderInventory();
+  renderCombos();
+  renderFlags();
+  renderStats();
+}
+
+// ─────────────────────────────────────────────
+// 万剑诀 onUpdate 模拟（每帧调）
+// ─────────────────────────────────────────────
+var lastT = performance.now();
+function tick(){
+  var now = performance.now();
+  var dt = (now - lastT) / 1000;
+  lastT = now;
+  RelicManager.update(dt);
+  // 万剑诀自动射剑日志
+  if(RelicManager._flags.combo_tenk){
+    var t = RelicManager._flags.autoShootT;
+    // 通过 combo onUpdate 里的 addParticle mock 检测
+  }
+  requestAnimationFrame(tick);
+}
+
+// 监听万剑诀自动射剑（通过 mock 劫持）
+var origEmit = Events.emit.bind(Events);
+// 用日志监听 combo:activated 里 onUpdate 触发的射剑
+// 简单方式：直接 watch role3SwordsAPI.getOrbits 调用次数
+var _orbitCallCount = 0;
+var _lastOrbitLog = 0;
+var origGetOrbits = window.role3SwordsAPI.getOrbits;
+window.role3SwordsAPI.getOrbits = function(){
+  _orbitCallCount++;
+  if(_orbitCallCount % 1 === 0 && RelicManager._flags.combo_tenk){
+    var now2 = performance.now()/1000;
+    if(now2 - _lastOrbitLog > 0.7){
+      _lastOrbitLog = now2;
+      addLog('⚡ [万剑诀] 自动射出追踪剑', 'combo');
+    }
+  }
+  return origGetOrbits();
+};
+
+// 初始化
+refreshAll();
+addLog('法宝系统初始化完成，共 ' + Object.keys(RELIC_DB).length + ' 个法宝，' + Object.keys(COMBO_DB).length + ' 个道法', 'good');
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

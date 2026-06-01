@@ -115,6 +115,28 @@ function _r3HitTry(x, y, range, dmg, sword){
         if(tag === 1 && window.role3 && typeof window.role3.onJHit === 'function'){
           window.role3.onJHit();
         }
+        // 法宝系统：飞剑命中 boss 事件
+        if(window.Events) window.Events.emit('sword:hit_boss', dmg);
+        // 法宝：穿透（piercing）—— 清空 hitMap 使飞剑可再次命中
+        if(sword && window.RelicManager && window.RelicManager._flags.piercing){
+          sword._hitMap = {};
+          // 延长寿命让飞剑继续飞
+          if(sword.life - sword.age < 0.3) sword.life = sword.age + 0.4;
+        }
+        // 法宝：弹射（bounce）—— 命中后改变方向
+        if(sword && !sword._bounced && window.RelicManager && window.RelicManager._flags.bounce){
+          sword._bounced = true;
+          sword.shootAngle += Math.PI * (0.7 + Math.random() * 0.6);
+          sword._hitMap = {};
+          var bounceLife = window.RelicManager._flags.bounceLife || 0.5;
+          sword.life = sword.age + bounceLife;
+        }
+        // 法宝：轮回刃（returning）—— 命中后强制返回
+        if(sword && window.RelicManager && window.RelicManager._flags.returning){
+          sword.returnTo = (typeof player !== 'undefined') ? player : sword.returnTo;
+          // 命中后立即转为 return 状态（下一帧生效）
+          if(sword.life - sword.age > 0.1) sword.life = sword.age + 0.05;
+        }
         // 击退（boss 抗性高，伤害 30+ 才有明显击退）
         if(dmg >= 25 && sword){
           const kF = Math.min(1.0, dmg / 60);
@@ -218,8 +240,24 @@ function updateRole3Swords(dt, player){
       s.spinSpd = 0;
     }
     else if(s.state === 'shoot'){
-      s.x += Math.cos(s.shootAngle) * s.shootSpd * dt;
-      s.y += Math.sin(s.shootAngle) * s.shootSpd * dt;
+      // 法宝：御剑术 speedMul 加成
+      var _spd = s.shootSpd;
+      if(window.RelicManager && window.RelicManager._flags.speedMul){
+        _spd *= window.RelicManager._flags.speedMul;
+      }
+      // 法宝：磁石灵核 追踪
+      if(window.RelicManager && window.RelicManager._flags.tracking){
+        var _b = (typeof boss !== 'undefined') ? boss : null;
+        if(_b && _b.state !== 'dead'){
+          var _ta = Math.atan2(_b.y - s.y, _b.x - s.x);
+          var _da = _ta - s.shootAngle;
+          while(_da > Math.PI) _da -= Math.PI*2;
+          while(_da < -Math.PI) _da += Math.PI*2;
+          s.shootAngle += Math.min(Math.abs(_da), 3.5 * dt) * Math.sign(_da);
+        }
+      }
+      s.x += Math.cos(s.shootAngle) * _spd * dt;
+      s.y += Math.sin(s.shootAngle) * _spd * dt;
       s.angle = s.shootAngle;
       s.spinSpd = 18;
       s.trail.push({x: s.x, y: s.y});

@@ -1017,6 +1017,8 @@ function luciaTakeDamage(dmg, kx, ky){
     lucia.animT = 0;
     lucia.deadAge = 0;
     _luciaSpawnDeathFX();
+    // 法宝系统：boss死亡事件
+    if(window.Events) window.Events.emit('boss:dead', { bossId: 'lucia' });
     return;
   }
   // 受击：超大伤害(>maxHp 8%)才打断动画
