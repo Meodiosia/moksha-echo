@@ -435,6 +435,7 @@ window.role3 = {
         ex._temp = true; // 分形镜额外剑不参与飞剑数量
       }
     }
+    if(typeof _addFxShape === 'function'){
       const fxX = sx + Math.cos(angle) * 20;
       const fxY = sy + Math.sin(angle) * 20;
       _addFxShape('crescent', fxX, fxY, {
