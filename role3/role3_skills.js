@@ -25,6 +25,18 @@ window.role3 = {
   MAX_SWORDS: 8,
   jAnimVariant: 0,
 
+  // ── 连携计数器 ──────────────────────────────
+  // J 轴：命中 boss 计数（仅普攻飞剑 tag=1）
+  _jHitCount: 0,
+  // K 轴：冲刺命中计数 → B；B 触发计数 → L
+  _kHitCount: 0,
+  _bTrigCount: 0,
+  // I 轴：格挡成功计数 → M；M 触发计数 → N
+  _iBlockCount: 0,
+  _mTrigCount: 0,
+  // 大招自动触发 CD（30s）
+  _cdUAuto: 0,
+
   swordCount(){
     if(typeof role3Swords === 'undefined') return 0;
     return role3Swords.filter(s => s.state === 'orbit' && !s._temp).length;
@@ -264,6 +276,94 @@ window.role3 = {
           s.orbitPhase += dt * 8;
         });
       }
+    }
+
+    // ── 大招自动触发（飞剑 ≥ 8 且 CD 好了）──
+    if(this._cdUAuto > 0) this._cdUAuto -= dt;
+    if(this._cdUAuto <= 0 && this.swordCount() >= this.MAX_SWORDS){
+      this._cdUAuto = 30.0;
+      // 强制无视手动 cdU，直接触发
+      this.cdU = 0;
+      this.doUltimate();
+    }
+  },
+
+  // ── 连携回调 ─────────────────────────────────
+
+  // J 普攻飞剑命中 boss 时调用（仅 tag=1）
+  onJHit(){
+    this._jHitCount++;
+    if(this._jHitCount === 10){
+      this._jHitCount = 0;
+      // J×10 → 触发 O（全力释放，无视 CD）
+      this.cdV = 0; // 确保 V 不干扰
+      this.chargingO = 0.001;
+      player.state = 'attack';
+      player.stateTimer = 9.0;
+      player.attackDur = 9.0;
+      comboIndex = 1;
+      setTimeout(() => { if(this.chargingO > 0) this._releaseO(); }, 100);
+    } else if(this._jHitCount === 5){
+      // J×5 → 触发 V（剑阵齐射，无视 CD），不归零继续计到10
+      this.cdV = 0;
+      this.doSanctuary();
+    }
+  },
+
+  // 冲刺命中 boss 时调用
+  onKHit(){
+    this._kHitCount++;
+    if(this._kHitCount >= 2){
+      this._kHitCount = 0;
+      // K×2 → 触发 B（千机突刺，无视 CD）
+      this.cdB = 0;
+      const triggered = this._tryBladeStepChain();
+      if(triggered) this._bTrigCount++;
+      if(this._bTrigCount >= 2){
+        this._bTrigCount = 0;
+        // B×2 → 触发 L（剑阵，全力释放，无视 CD）
+        setTimeout(() => {
+          this.cdL = 0;
+          this.chargingL = 0.001;
+          player.state = 'attack';
+          player.stateTimer = 9.0;
+          player.attackDur = 9.0;
+          comboIndex = 2;
+          setTimeout(() => { if(this.chargingL > 0) this._releaseL(); }, 100);
+        }, 600); // B 动作完成后延迟触发
+      }
+    }
+  },
+
+  // B 连携内部调用（直接触发 doBladeStep 但不检查 cdB）
+  _tryBladeStepChain(){
+    if(this.isBusy()) return false;
+    if(this.swordCount() < 2) return false;
+    // 清零 cdB 让 doBladeStep 能进入，doBladeStep 内部会重置 cdB=8.0
+    this.cdB = 0;
+    this.doBladeStep();
+    return true;
+  },
+
+  // 格挡成功时调用（包含普通格挡，不限完美）
+  onIBlock(){
+    this._iBlockCount++;
+    if(this._iBlockCount >= 3){
+      this._iBlockCount = 0;
+      // I×3 → 触发 M（飞剑风暴，无视 CD，格挡动作结束后触发）
+      setTimeout(() => {
+        this.cdM = 0;
+        if(!this.isBusy()) this.doSwordOrbit();
+        this._mTrigCount++;
+        if(this._mTrigCount >= 3){
+          this._mTrigCount = 0;
+          // M×3 → 触发 N（召剑爆发，无视 CD，延迟到风暴结束后）
+          setTimeout(() => {
+            this.cdN = 0;
+            if(!this.isBusy()) this.doSwordCall();
+          }, 1600); // M 风暴持续 1.5s，之后触发
+        }
+      }, 350); // 格挡动作约 0.3s，确保 isBusy 解除
     }
   },
 

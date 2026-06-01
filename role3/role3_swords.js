@@ -111,6 +111,10 @@ function _r3HitTry(x, y, range, dmg, sword){
       if(!map || !map.boss){
         if(map) map.boss = true;
         if(typeof hitBoss === 'function') hitBoss(dmg, x - boss.x, y - boss.y);
+        // J 普攻飞剑命中 → 连携计数
+        if(tag === 1 && window.role3 && typeof window.role3.onJHit === 'function'){
+          window.role3.onJHit();
+        }
         // 击退（boss 抗性高，伤害 30+ 才有明显击退）
         if(dmg >= 25 && sword){
           const kF = Math.min(1.0, dmg / 60);

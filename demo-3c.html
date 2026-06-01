@@ -297,6 +297,23 @@ body.mobile.show-hint:not(.hint-dismissed) #rotate-hint{ display: flex; }
 }
 .skill-btn.dim{ opacity: 0.5; filter: saturate(0.5) brightness(0.85); }
 
+/* ── 移动端：隐藏进阶技能按钮（由连携系统自动触发）── */
+body.mobile #sb-V, body.mobile #sb-B, body.mobile #sb-P,
+body.mobile #sb-M, body.mobile #sb-L, body.mobile #sb-O,
+body.mobile #sb-N, body.mobile #sb-U { display: none !important; }
+
+/* ── 移动端：重新布局三按钮（J/K/I）── */
+/* K 冲刺：J 左上方 */
+body.mobile #sb-K{
+  right: calc(env(safe-area-inset-right, 0) + 82px);
+  bottom: calc(env(safe-area-inset-bottom, 0) + 60px);
+}
+/* I 防御：J 正上方 */
+body.mobile #sb-I{
+  right: calc(env(safe-area-inset-right, 0) + 16px);
+  bottom: calc(env(safe-area-inset-bottom, 0) + 94px);
+}
+
 /* ── 主攻 J 位置：右下角（贴底，整组技能跟着下移）──
    J right=10, bottom=8，则 J 中心 = (49, 47)
 */
@@ -1614,6 +1631,11 @@ function defendBlock(dmgX, dmgY){
       if(dmgNums.length < DMGNUM_MAX)
         dmgNums.push({x:boss.x,y:boss.y-BOSS_H-5,val:cntDmg,age:0,life:0.9,vy:-55});
     }
+  }
+
+  // role3 连携：格挡成功计数（I轴：每3次→M，每3次M→N）
+  if(currentChar === 3 && window.role3 && typeof window.role3.onIBlock === 'function'){
+    window.role3.onIBlock();
   }
 
   // role3 专属：完美格挡触发飞剑反击 + 获得 1 把剑
@@ -3903,6 +3925,8 @@ function update(dt){
         // role3：命中敌人 50% 概率退还消耗的飞剑
         if(currentChar === 3 && window.role3){
           window.role3.onDashHit();
+          // role3 连携：冲刺命中计数（K轴：每2次→B，每2次B→L）
+          if(typeof window.role3.onKHit === 'function') window.role3.onKHit();
         }
         // 大招期间冲刺命中 → 切割特效
         if(ult.active){
