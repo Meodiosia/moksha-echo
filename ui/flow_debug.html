@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>出发UI + 结算UI 测试 · 莫克夏回声</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #08080f; color: #ccc; font-family: Consolas, monospace; font-size: 12px; }
+
+  #c-wrap {
+    position: relative; width: 800px; height: 560px;
+    margin: 16px auto 0; border: 1px solid #222;
+    background: radial-gradient(circle at center, #0a1a1a 0%, #050510 100%);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #c-wrap .hint { color: #334; font-size: 13px; letter-spacing: 2px; }
+
+  .ctrl {
+    width: 800px; margin: 10px auto;
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    padding: 10px; background: #0e0e1a; border: 1px solid #222; border-radius: 4px;
+  }
+  .btn { padding: 5px 11px; border-radius: 3px; border: 1px solid #334;
+         background: #141428; color: #aaa; cursor: pointer; font-family: inherit; font-size: 11px; }
+  .btn:hover { border-color: #AAEEFF; color: #AAEEFF; }
+  .btn.gold { border-color: #FFD080; color: #FFD080; }
+  .btn.red  { border-color: #e74c3c; color: #e74c3c; }
+
+  .checklist { width: 800px; margin: 8px auto; background: #0a0a14;
+               border-left: 3px solid #4CAF50; padding: 10px 14px;
+               font-size: 11px; color: #667; line-height: 2; }
+  .checklist b { color: #4CAF50; }
+
+  /* 复用 game_state.js 的 gs-modal CSS（内联） */
+</style>
+</head>
+<body>
+
+<div id="c-wrap">
+  <div class="hint">游戏画面区域（弹窗会覆盖在这里）</div>
+</div>
+
+<div class="ctrl">
+  <span style="color:#FFD080;align-self:center">流程测试：</span>
+  <button class="btn gold" onclick="testFullFlow()">▶ 完整流程（难度→法宝→战斗→结算）</button>
+  <button class="btn" onclick="testDiffOnly()">选难度弹窗</button>
+  <button class="btn" onclick="testRelicSelect()">法宝选择弹窗</button>
+  <button class="btn gold" onclick="testResultVictory()">结算·此劫已渡</button>
+  <button class="btn red"  onclick="testResultDefeat()">结算·堕入轮回</button>
+  <button class="btn" onclick="testWithRelics()">结算·含法宝列表</button>
+  <span style="color:#556;margin:0 4px">|</span>
+  <button class="btn" onclick="RunManager.debugDump()">Dump RunManager</button>
+</div>
+
+<div class="checklist">
+  <b>出发UI + 结算UI 验收标准：</b><br>
+  ✅ 1. 完整流程：难度选择 → 法宝2选1 → 进入战斗（Events日志出现 run:room_entered）<br>
+  ✅ 2. 难度弹窗：现有样式（红/金/绿三档），点击后关闭并触发后续流程<br>
+  ✅ 3. 法宝选择：全屏遮罩 + 2张卡片，选完弹窗关闭<br>
+  ✅ 4. 结算·胜利：标题"此劫已渡"，金色，含台词<br>
+  ✅ 5. 结算·失败：标题"堕入轮回"，红色，含台词<br>
+  ✅ 6. 结算含法宝：法宝列表显示emoji+名称，道法激活时显示道法名<br>
+  ✅ 7. 结算"再渡一劫"→ 触发新Run（Events出现 run:started）<br>
+  ✅ 8. 结算"重选难度"→ 触发难度弹窗 → 选完后新Run<br>
+  ✅ 9. 渡劫印记：胜利+100，失败+30，显示在结算界面<br>
+  ✅ 10. 本局数据（飞剑命中/格挡/道法/冲刺）显示在结算
+</div>
+
+<!-- 复用 game_state.js 的 CSS -->
+<style>
+.gs-modal{
+  position:fixed;inset:0;
+  background:radial-gradient(circle at center,rgba(40,10,8,0.9) 0%,rgba(0,0,0,0.97) 80%);
+  z-index:999;display:none;align-items:center;justify-content:center;
+  flex-direction:column;color:#FFE7B0;
+  font:600 16px/1.6 'PingFang SC','Microsoft YaHei',sans-serif;
+  backdrop-filter:blur(2px);user-select:none;
+}
+.gs-modal.show{display:flex;}
+.gs-title{font-size:28px;font-weight:900;color:#FFE7B0;
+  text-shadow:0 0 12px rgba(255,140,50,0.7),0 2px 4px rgba(0,0,0,0.9);
+  letter-spacing:6px;margin-bottom:10px;}
+.gs-title.win{color:#FFF6C8;}
+.gs-title.lose{color:#FF6060;text-shadow:0 0 12px rgba(255,30,30,0.7),0 2px 4px rgba(0,0,0,0.9);}
+.gs-sub{font-size:12px;color:rgba(255,200,140,0.7);letter-spacing:4px;margin-bottom:16px;}
+.gs-line{font-size:13px;color:rgba(255,230,180,0.85);letter-spacing:2px;margin-bottom:16px;
+  max-width:80vw;text-align:center;font-style:italic;}
+.gs-diff-row{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;}
+.gs-diff-btn{width:120px;padding:14px 12px;
+  background:linear-gradient(180deg,rgba(40,16,12,0.85) 0%,rgba(15,5,4,0.92) 100%);
+  border:2px solid rgba(255,180,80,0.40);border-radius:8px;cursor:pointer;text-align:center;
+  transition:transform 0.12s,border-color 0.2s;}
+.gs-diff-btn:hover{transform:translateY(-3px);border-color:rgba(255,220,140,0.95);}
+.gs-diff-btn .num{display:block;font-size:26px;font-weight:900;margin-bottom:3px;
+  text-shadow:0 0 10px currentColor;}
+.gs-diff-btn .name{display:block;font-size:14px;font-weight:800;margin-bottom:4px;letter-spacing:3px;}
+.gs-diff-btn .desc{display:block;font-size:10px;color:rgba(255,220,170,0.5);letter-spacing:1px;}
+.gs-btn-row{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:16px;}
+.gs-btn{padding:11px 26px;font:700 13px/1 'PingFang SC',sans-serif;letter-spacing:4px;color:#FFE7B0;
+  background:linear-gradient(180deg,rgba(50,18,12,0.9) 0%,rgba(20,6,4,0.95) 100%);
+  border:1.5px solid rgba(255,180,80,0.45);border-radius:6px;cursor:pointer;transition:all 0.15s;}
+.gs-btn:hover{border-color:rgba(255,220,140,0.9);transform:translateY(-2px);}
+.gs-btn.primary{background:linear-gradient(180deg,rgba(180,80,20,0.85),rgba(100,30,10,0.95));
+  border-color:rgba(255,150,60,0.7);}
+</style>
+
+<script src="../core/event_bus.js"></script>
+<script src="../core/relic_system.js"></script>
+<script src="../levels/level_2.js"></script>
+<script src="../levels/level_3.js"></script>
+<script src="../core/run_manager.js"></script>
+<script src="../ui/relic_reward.js"></script>
+
+<script>
+// ── mock 全局 ──
+window.player = { hp:10000, x:400, y:280 };
+window.playerHp = 10000; window.playerMaxHp = 10000;
+window.boss = { state:'idle' }; window.GAME_STATE = 'menu';
+window.DEF_PARRY_WINDOW = 0.18;
+window.role3 = { MAX_SWORDS:8 };
+window.enemies = [];
+
+const DIFFICULTIES = {
+  1:{ name:'简单', label:'初心', desc:'初次接触者推荐', color:'#80FFB0' },
+  2:{ name:'普通', label:'修行', desc:'正统体验，平衡考验', color:'#FFD080' },
+  3:{ name:'困难', label:'试炼', desc:'为绝对的强者准备', color:'#FF6060' },
+};
+window.GAME_DIFFICULTY = DIFFICULTIES[2];
+
+const VICTORY_LINES = ['解脱者归来，回声仍在轮回。','万物归寂，唯有飞剑长鸣。','业力终结，业镜碎成星屑。'];
+const DEFEAT_LINES  = ['此世功德不足，轮回未尽。','剑道未成，再历一世。','业障深重，渡劫失败。'];
+
+// ── Events 日志 ──
+['run:started','run:room_entered','run:room_clear','run:boss_defeated','run:ended',
+ 'relic:equipped','combo:activated','run:show_relic_select'].forEach(function(ev){
+  Events.on(ev, function(d){
+    console.log('[Event]', ev, d ? JSON.stringify(d).slice(0,80) : '');
+  });
+});
+
+// ── showDifficultyModal（内联实现，复用样式）──
+function showDifficultyModal(onChosen){
+  var modal = document.getElementById('gs-diff-modal');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'gs-diff-modal'; modal.className = 'gs-modal';
+    modal.innerHTML = `
+      <div class="gs-title">Moksha Echo</div>
+      <div class="gs-sub">解 脱 回 声 · 选 择 试 炼</div>
+      <div class="gs-diff-row">
+        ${[1,2,3].map(function(i){
+          var d = DIFFICULTIES[i];
+          return '<div class="gs-diff-btn" data-level="'+i+'">'
+                +'<span class="num" style="color:'+d.color+'">'+i+'</span>'
+                +'<span class="name" style="color:'+d.color+'">'+d.label+'</span>'
+                +'<span class="desc">'+d.name+'·'+d.desc+'</span>'
+                +'</div>';
+        }).join('')}
+      </div>`;
+    document.body.appendChild(modal);
+    modal.querySelectorAll('.gs-diff-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var lv = parseInt(btn.dataset.level);
+        window.GAME_DIFFICULTY = DIFFICULTIES[lv];
+        modal.classList.remove('show');
+        if(typeof window._gs_onChosen === 'function') window._gs_onChosen();
+      });
+    });
+  }
+  window._gs_onChosen = onChosen;
+  modal.classList.add('show');
+}
+
+// ── showResultModal（复用 game_state.js 逻辑）──
+function showResultModal(victory){
+  var modal = document.getElementById('gs-result-modal');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'gs-result-modal'; modal.className = 'gs-modal';
+    document.body.appendChild(modal);
+  }
+  var lines = victory ? VICTORY_LINES : DEFEAT_LINES;
+  var line  = lines[Math.floor(Math.random()*lines.length)];
+
+  // 法宝列表
+  var relicHTML = '';
+  if(window.RelicManager){
+    var items = RelicManager.getInventory();
+    var combos = RelicManager.getActiveCombos();
+    if(items.length > 0){
+      relicHTML += '<div style="margin:12px 0 6px;font-size:11px;color:rgba(255,200,140,0.5);letter-spacing:3px">— 此 世 法 宝 —</div>';
+      relicHTML += '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:8px">';
+      items.forEach(function(e){
+        var bc = e.relic.rarity==='rare'?'#AAEEFF':e.relic.rarity==='legendary'?'#FFD080':'#2a2a40';
+        relicHTML += '<div style="padding:6px 10px;border-radius:5px;background:rgba(10,10,24,0.8);border:1px solid '+bc+';font-size:11px;color:#ddd;text-align:center">'
+                  +'<span style="font-size:18px;display:block">'+e.relic.icon+'</span>'+e.relic.name+'</div>';
+      });
+      relicHTML += '</div>';
+      if(combos.length > 0){
+        relicHTML += '<div style="font-size:11px;color:#FFD080;margin-bottom:6px;letter-spacing:2px">⚡ 已成道法：'
+                  + combos.map(function(id){ var c = COMBO_DB[id]; return c?c.name:id; }).join('　') + '</div>';
+      }
+    }
+  }
+
+  // 数据
+  var seals = victory ? 100 : 30;
+  var sealHTML = '<div style="margin:8px 0;padding:6px 18px;background:rgba(255,208,128,0.08);border:1px solid rgba(255,208,128,0.25);border-radius:5px;font-size:12px;color:#FFD080;letter-spacing:2px">渡劫印记 +'+seals+'</div>';
+
+  var statsHTML = '';
+  if(window.RelicManager){
+    var s = RelicManager.getStats();
+    statsHTML = '<div style="display:flex;gap:14px;justify-content:center;margin:6px 0;font-size:10px;color:rgba(255,200,140,0.5)">'
+              +'<span>飞剑命中 '+(s.relicHits||0)+'</span>'
+              +'<span>格挡 '+(s.blocksTriggered||0)+'</span>'
+              +'<span>道法 '+(s.combosTrigered||0)+'</span>'
+              +'<span>冲刺 '+(s.dashHits||0)+'</span>'
+              +'</div>';
+  }
+
+  modal.innerHTML = '<div class="gs-title '+(victory?'win':'lose')+'">'+(victory?'此 劫 已 渡':'堕 入 轮 回')+'</div>'
+    +'<div class="gs-sub">'+(victory?'飞升之路，尚未终结':'此世功德不足，再来')+'</div>'
+    +'<div class="gs-line">「'+line+'」</div>'
+    +statsHTML+relicHTML+sealHTML
+    +'<div class="gs-btn-row">'
+    +'<button class="gs-btn primary" id="gs-retry">再 渡 一 劫</button>'
+    +'<button class="gs-btn" id="gs-change-diff">重 选 难 度</button>'
+    +'</div>';
+  modal.classList.add('show');
+
+  document.getElementById('gs-retry').addEventListener('click', function(){
+    modal.classList.remove('show');
+    RunManager.startRun(window.GAME_DIFFICULTY);
+    console.log('[TEST] 再渡一劫，RunManager.startRun 已调用');
+  });
+  document.getElementById('gs-change-diff').addEventListener('click', function(){
+    modal.classList.remove('show');
+    showDifficultyModal(function(){
+      RunManager.startRun(window.GAME_DIFFICULTY);
+      console.log('[TEST] 重选难度后 RunManager.startRun 已调用');
+    });
+  });
+}
+
+// ── RunManager Events 接入 ──
+Events.on('run:ended', function(data){
+  setTimeout(function(){ showResultModal(data.outcome === 'victory'); }, 300);
+});
+Events.on('run:go_menu', function(){ window.GAME_STATE = 'menu'; });
+
+// ── 测试函数 ──
+function testFullFlow(){
+  RelicManager.reset();
+  showDifficultyModal(function(){
+    RunManager.startRun(window.GAME_DIFFICULTY);
+  });
+}
+
+function testDiffOnly(){
+  showDifficultyModal(function(){
+    alert('选择了难度: ' + window.GAME_DIFFICULTY.name);
+  });
+}
+
+function testRelicSelect(){
+  var pool = RunManager._buildRelicPool(2, false);
+  RelicReward.show(pool,
+    function(id){ console.log('选择:', id); },
+    function(){ console.log('跳过'); }
+  );
+}
+
+function testResultVictory(){
+  RelicManager.reset();
+  showResultModal(true);
+}
+
+function testResultDefeat(){
+  RelicManager.reset();
+  showResultModal(false);
+}
+
+function testWithRelics(){
+  RelicManager.reset();
+  RelicManager.equip('magnetic_core');
+  RelicManager.equip('returning_blade');  // 触发归元剑道法
+  RelicManager.equip('sword_heart');
+  showResultModal(true);
+}
+</script>
+</body>
+</html>

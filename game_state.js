@@ -230,7 +230,7 @@
   }
 
   // ─────────────────────────────────────────────
-  // 结算 modal
+  // 结算 modal（升级版：含法宝列表 + 渡劫印记）
   // ─────────────────────────────────────────────
   function showResultModal(victory){
     let modal = document.getElementById('gs-result-modal');
@@ -243,14 +243,81 @@
     const lines = victory ? VICTORY_LINES : DEFEAT_LINES;
     const line = lines[Math.floor(Math.random() * lines.length)];
     const titleCls = victory ? 'win' : 'lose';
-    const titleText = victory ? '通 关 · 解 脱' : '陨 落 · 再 临';
-    const subText = victory ? 'You Have Transcended' : 'Try Again';
+    const titleText = victory ? '此 劫 已 渡' : '堕 入 轮 回';
+    const subText   = victory ? '飞升之路，尚未终结' : '此世功德不足，再来';
+
+    // ── 法宝列表 ──
+    let relicHTML = '';
+    if(window.RelicManager){
+      const items = window.RelicManager.getInventory();
+      const combos = window.RelicManager.getActiveCombos();
+      if(items.length > 0){
+        relicHTML = `
+          <div style="margin:14px 0 8px;font-size:11px;color:rgba(255,200,140,0.5);letter-spacing:3px">
+            — 此 世 法 宝 —
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:10px">
+            ${items.map(e => `
+              <div style="
+                padding:6px 10px;border-radius:5px;
+                background:rgba(10,10,24,0.8);
+                border:1px solid ${e.relic.rarity==='rare'?'#AAEEFF':e.relic.rarity==='legendary'?'#FFD080':'#2a2a40'};
+                font-size:11px;color:#ddd;text-align:center;
+              ">
+                <span style="font-size:18px;display:block">${e.relic.icon}</span>
+                ${e.relic.name}
+              </div>
+            `).join('')}
+          </div>
+          ${combos.length > 0 ? `
+            <div style="font-size:11px;color:#FFD080;margin-bottom:6px;letter-spacing:2px">
+              ⚡ 已成道法：${combos.map(id => {
+                const c = window.COMBO_DB && window.COMBO_DB[id];
+                return c ? c.name : id;
+              }).join('　')}
+            </div>
+          ` : ''}
+        `;
+      }
+    }
+
+    // ── 渡劫印记计算 ──
+    const seals = victory ? 100 : 30;
+    const sealHTML = `
+      <div style="
+        margin:10px 0;padding:8px 20px;
+        background:rgba(255,208,128,0.08);
+        border:1px solid rgba(255,208,128,0.25);
+        border-radius:5px;font-size:12px;
+        color:#FFD080;letter-spacing:2px;
+      ">
+        渡劫印记 +${seals}
+      </div>
+    `;
+
+    // ── 本局关键数据 ──
+    let statsHTML = '';
+    if(window.RelicManager){
+      const stats = window.RelicManager.getStats();
+      statsHTML = `
+        <div style="display:flex;gap:16px;justify-content:center;margin:8px 0;font-size:10px;color:rgba(255,200,140,0.5)">
+          <span>飞剑命中 ${stats.relicHits || 0}</span>
+          <span>格挡 ${stats.blocksTriggered || 0}</span>
+          <span>道法 ${stats.combosTrigered || 0}</span>
+          <span>冲刺 ${stats.dashHits || 0}</span>
+        </div>
+      `;
+    }
+
     modal.innerHTML = `
       <div class="gs-title ${titleCls}">${titleText}</div>
       <div class="gs-sub">${subText}</div>
       <div class="gs-line">「${line}」</div>
+      ${statsHTML}
+      ${relicHTML}
+      ${sealHTML}
       <div class="gs-btn-row">
-        <button class="gs-btn primary" id="gs-retry">再 来 一 次</button>
+        <button class="gs-btn primary" id="gs-retry">再 渡 一 劫</button>
         <button class="gs-btn" id="gs-change-diff">重 选 难 度</button>
       </div>
     `;
@@ -259,15 +326,28 @@
     const retry = (e) => {
       e && e.preventDefault();
       modal.classList.remove('show');
-      restartGame();
+      if(window.RunManager){
+        window.RunManager.startRun(window.GAME_DIFFICULTY);
+        restartGame();
+      } else {
+        restartGame();
+      }
     };
     const changeDiff = (e) => {
       e && e.preventDefault();
       modal.classList.remove('show');
-      showDifficultyModal(() => restartGame());
+      showDifficultyModal(() => {
+        updateTagHighlight();
+        if(window.RunManager){
+          window.RunManager.startRun(window.GAME_DIFFICULTY);
+          restartGame();
+        } else {
+          restartGame();
+        }
+      });
     };
     const retryBtn = document.getElementById('gs-retry');
-    const cdBtn   = document.getElementById('gs-change-diff');
+    const cdBtn    = document.getElementById('gs-change-diff');
     retryBtn.addEventListener('touchstart', retry, { passive: false });
     retryBtn.addEventListener('click', retry);
     cdBtn.addEventListener('touchstart', changeDiff, { passive: false });
@@ -414,12 +494,21 @@
   // ─────────────────────────────────────────────
   // 启动流程
   // ─────────────────────────────────────────────
+  // 启动流程
+  // ─────────────────────────────────────────────
   function bootstrap(){
     initTopBar();
-    // 首次显示难度选择
+    // 首次显示难度选择 → 选完后交给 RunManager 启动
     showDifficultyModal(() => {
-      restartGame();
       updateTagHighlight();
+      if(window.RunManager){
+        // Roguelite 模式：RunManager 接管（内部触发法宝选择→房间流程）
+        window.RunManager.startRun(window.GAME_DIFFICULTY);
+        // RunManager 通过 Events 驱动刷怪/地图/boss，restartGame 仅负责玩家/特效重置
+        restartGame();
+      } else {
+        restartGame();
+      }
     });
   }
 
@@ -491,6 +580,14 @@
     // RunManager 请求进入下一局
     Events.on('run:go_menu', function(){
       window.GAME_STATE = 'menu';
+    });
+
+    // RunManager 局结束 → 显示结算弹窗
+    Events.on('run:ended', function(data){
+      const victory = data.outcome === 'victory';
+      window.GAME_STATE = victory ? 'victory' : 'defeat';
+      // 延迟 0.5s 弹出（给 Boss 死亡动画缓冲）
+      setTimeout(function(){ showResultModal(victory); }, 500);
     });
   }
 })();
