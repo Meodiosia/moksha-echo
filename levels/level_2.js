@@ -63,8 +63,8 @@
     // 二维 tile id 数组（与 1 关 GROUND_MASK 同结构语义）
     mapData: mapData,
 
-    // 玩家出生点（红框位置：竞技场左侧）
-    spawnPoint: { x: 48 * T, y: 27 * T },
+    // 玩家出生点（左侧大室中央，GROUND_MASK 已知可走区域）
+    spawnPoint: { x: 10 * T, y: 28 * T },
 
     // Boss 出生点（蓝框位置：竞技场中右侧）
     bossSpawn: { type: 'lucia', x: 53 * T, y: 27 * T },

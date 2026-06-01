@@ -830,23 +830,18 @@ function initMapImage(onReady){
   // 关卡选择：RunManager 模式默认 level_2；旧流程 level_3；?level=2 强制切 2
   const _lvParam = (new URLSearchParams(location.search)).get('level');
   if(_lvParam === '2' || (!window.LUCIA_START_PHASE && typeof LEVEL_2 !== 'undefined')){
-    // level_2（小怪房）：用原始 ground_clean.png + GROUND_MASK（熔岩地形）
-    // ground2_clean.png 是废弃迷宫图，不用
+    // level_2（小怪房）：用 ground_combat.png + GROUND_MASK
+    // GROUND_MASK 就是为这张图手工标注的可走区域，直接复用，不用 level_2.mapData 覆盖
     if(typeof GROUND_MASK !== 'undefined'){
       window._activeGroundMask  = GROUND_MASK;
       window._activeGroundMaskW = GROUND_MASK_W;
       window._activeGroundMaskH = GROUND_MASK_H;
     }
     window._activeGroundUrl = 'ground_combat.png';
-    // level_2 用 mapData 覆盖碰撞（level_2.js 的走廊布局）
-    if(typeof LEVEL_2 !== 'undefined' && LEVEL_2.mapData){
-      window._pendingMapData    = LEVEL_2.mapData;
-      window._pendingMapLevel   = LEVEL_2;
-    }
-    if(typeof LEVEL_2 !== 'undefined' && LEVEL_2.spawnPoint){
-      player.x = LEVEL_2.spawnPoint.x;
-      player.y = LEVEL_2.spawnPoint.y;
-    }
+    // 不设 _pendingMapData，让 applyGroundCollision 直接用 GROUND_MASK 生成碰撞
+    // 出生点：用 GROUND_MASK 里已知可走的区域（左侧大厅中心附近）
+    player.x = 10 * 24;   // tile(10,28)，左侧大室中央（GROUND_MASK 已知可走）
+    player.y = 28 * 24;
     console.log('[level] 关卡 2 — 熔火回廊（小怪房）');
   } else if(typeof LEVEL_3 !== 'undefined'){
     // 关卡 3 默认：把 mapData 写入碰撞表
@@ -5567,11 +5562,9 @@ if(window.LUCIA_START_PHASE){
     window._activeGroundMaskW = GROUND_MASK_W;
     window._activeGroundMaskH = GROUND_MASK_H;
   }
-  // 将出生点设为 level_2
-  if(typeof LEVEL_2 !== 'undefined' && LEVEL_2.spawnPoint){
-    player.x = LEVEL_2.spawnPoint.x;
-    player.y = LEVEL_2.spawnPoint.y;
-  }
+  // 出生点：左侧大室中央（与 LEVEL_2.spawnPoint 一致）
+  player.x = 10 * 24;
+  player.y = 28 * 24;
 }
 buildMap();
 // 默认不开启 AI，由用户点击按钮（左上 AI 按钮 / Tab 键）启用
