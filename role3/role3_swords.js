@@ -168,16 +168,16 @@ function _r3HitTry(x, y, range, dmg, sword){
       const r2 = (typeof P_R !== 'undefined' ? P_R : 14) + range + 12;
       if(Math.hypot(e.x - x, e.y - y) < r2){
         if(map) map[ek] = true;
-        if(typeof e.hp !== 'undefined') e.hp -= dmg;
-        e.hurtTimer = 0.25;
-        // 击退
+        // 优先用 takeDamage（archer_enemy 等有完整受伤逻辑的怪）
         const kF = Math.min(1.5, dmg / 25);
-        if(sword){
-          e.vx = (sword.kx || (e.x - x) * 6) * kF * 0.6;
-          e.vy = (sword.ky || (e.y - y) * 6) * kF * 0.6;
+        const kx = sword ? (sword.kx || (e.x - x) * 6) * kF * 0.6 : (e.x - x) * 4 * kF;
+        const ky = sword ? (sword.ky || (e.y - y) * 6) * kF * 0.6 : (e.y - y) * 4 * kF;
+        if(typeof e.takeDamage === 'function'){
+          e.takeDamage(dmg, kx, ky);
         } else {
-          e.vx = (e.x - x) * 4 * kF;
-          e.vy = (e.y - y) * 4 * kF;
+          if(typeof e.hp !== 'undefined') e.hp -= dmg;
+          e.hurtTimer = 0.25;
+          e.vx = kx; e.vy = ky;
         }
         if(typeof combo !== 'undefined') {
           combo++;

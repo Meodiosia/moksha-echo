@@ -550,6 +550,7 @@ window.addEventListener('unhandledrejection',function(e){
 <script src="levels/level_2.js"></script>
 <script src="levels/level_3.js"></script>
 <script src="map_atlas.js"></script>
+<script src="enemies/archer_enemy.js"></script>
 <!-- 核心系统（最先加载） -->
 <script src="core/event_bus.js"></script>
 <script src="core/save_system.js"></script>
@@ -1468,6 +1469,7 @@ function doAttack(){
 
 // ── 敌人系统 ──────────────────────────────────
 const enemies=[];
+window.enemies = enemies;  // 暴露给 game_state.js / RunManager
 // 浮动伤害数字（上限16条）
 const dmgNums=[];
 const DMGNUM_MAX=16;
@@ -1505,6 +1507,59 @@ window._clearFx = function(){
   if(typeof particles !== 'undefined') particles.length = 0;
   if(typeof shockwaves !== 'undefined') shockwaves.length = 0;
   if(window.fxShapesPool) window.fxShapesPool.length = 0;
+};
+
+// ── RunManager 地图切换 ─────────────────────────
+// RunManager 通过 run:load_level 事件调用本函数
+// 支持 levelId=2（level_2 走廊）或 levelId=3（level_3 boss 房）
+window._loadLevel = function(levelData){
+  if(!levelData) return;
+  const id = levelData.id || (levelData === window.LEVEL_2 ? 2 : 3);
+  const isL3 = (id === 3) || (levelData === window.LEVEL_3);
+
+  // 1. 清除当前 boss + 敌人 + 特效
+  boss = null;
+  if(typeof enemies !== 'undefined') enemies.length = 0;
+  if(window._clearFx) window._clearFx();
+
+  // 2. 更新碰撞表（用 levelData.mapData 覆盖）
+  if(levelData.mapData){
+    const md = levelData.mapData;
+    const mw = levelData.mapW || MAP_W;
+    const mh = levelData.mapH || MAP_H;
+    for(let ty=0; ty<mh && ty<MAP_H; ty++)
+      for(let tx=0; tx<mw && tx<MAP_W; tx++)
+        map[ty][tx] = md[ty][tx];
+  }
+
+  // 3. 切换 ground 图 + 重建 mapCanvas
+  const groundUrl = isL3 ? 'ground3_clean.png' : 'ground3_clean.png'; // level_2 暂无独立图，共用
+  mapReady = false;
+  const mc = mapCanvas ? mapCanvas.getContext('2d') : null;
+  if(!mc){ console.warn('[_loadLevel] mapCanvas 未初始化'); mapReady = true; return; }
+
+  // 清除旧画布内容
+  mc.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+
+  if(window.switchLevel){
+    window.switchLevel({
+      groundUrl: groundUrl,
+      onReady: function(){
+        // 重新绘制地图
+        if(typeof drawBaseGround === 'function') drawBaseGround(mc, MAP_W, MAP_H);
+        if(typeof postprocessMapCanvas === 'function') postprocessMapCanvas(mc);
+        mapReady = true;
+        console.log('[_loadLevel] 地图已切换 levelId:', id);
+      }
+    });
+  } else {
+    mapReady = true;
+  }
+
+  // 4. 更新 level3 flag（影响 fog/ambient/装饰）
+  window._isLevel3 = isL3;
+
+  console.log('[_loadLevel] 切换到关卡', id, isL3 ? '(boss房)' : '(战斗房)');
 };
 
 // ── 护盾系统 ──────────────────────────────────
@@ -2267,6 +2322,15 @@ function hitEnemiesInRange(ax,ay,hitR){
 function updateEnemies(dt){
   for(let i=enemies.length-1;i>=0;i--){
     const e=enemies[i];
+
+    // ── archer_enemy 自带 update 方法，直接调用 ──
+    if(e.isArcher && typeof e.update === 'function'){
+      e.update(dt, player);
+      // 死亡淡出后移除
+      if(e.state === 'dead' && e.deadAge > 1.2) enemies.splice(i, 1);
+      continue;
+    }
+
     if(e.stateTimer>0) e.stateTimer-=dt;
     if(e.atkCooldown>0) e.atkCooldown-=dt;
     if(e.hurtTimer>0) e.hurtTimer-=dt;
@@ -2355,6 +2419,11 @@ function updateEnemies(dt){
 }
 
 function _drawSingleEnemy(e){
+  // archer_enemy 自带 draw 方法
+  if(e.isArcher && typeof e.draw === 'function'){
+    e.draw(ctx, ox(), oy(), ISO_Y_SCALE);
+    return;
+  }
   const ch=CHARS[0];
   // ISO Y 压缩后的屏幕坐标
   const sx=Math.floor(e.x-ox()), sy=Math.floor((e.y-oy())*ISO_Y_SCALE);
@@ -5464,9 +5533,21 @@ function loop(ts){
 }
 
 window.BOSS_INVINCIBLE = false;  // 无敌关闭
-window.LUCIA_START_PHASE = 3;
-// 使用新地图 map3
-window._activeGroundUrl = 'ground3_clean.png';
+// RunManager 接管时：从 level_2 出发，不直接进 boss 房
+// 仅 ?direct=boss 或 !RunManager 时才走旧流程
+const _directBoss = (new URLSearchParams(location.search)).get('direct') === 'boss';
+window.LUCIA_START_PHASE = (_directBoss || typeof window.RunManager === 'undefined') ? 3 : null;
+// 初始地图：RunManager 流程用 level_2，旧流程用 level_3
+if(window.LUCIA_START_PHASE){
+  window._activeGroundUrl = 'ground3_clean.png';
+} else {
+  // level_2 暂无独立 ground 图，使用 level_3 地图作为起始占位，RunManager 会切换
+  window._activeGroundUrl = 'ground3_clean.png';
+  // 将出生点设为 level_2
+  if(typeof LEVEL_2 !== 'undefined' && LEVEL_2.spawnPoint){
+    window._rogueliteSpawn = { x: LEVEL_2.spawnPoint.x, y: LEVEL_2.spawnPoint.y };
+  }
+}
 buildMap();
 // 默认不开启 AI，由用户点击按钮（左上 AI 按钮 / Tab 键）启用
 window.addEventListener('load', () => {
@@ -5484,10 +5565,14 @@ if(!_isLevel3) initFogLayers();
 initMapImage(()=>{
   if(!_isLevel3) prerenderDetails();
   if(!_isLevel3) initEnemies();   // level3 不生成小怪
+  // 预加载 Lucia 帧（不论哪种流程都需要）
+  if(typeof loadLuciaFrames === 'function' && !_luciaPreloadStarted){
+    _luciaPreloadStarted = true;
+    loadLuciaFrames(()=>console.log('[lucia] preload done'));
+  }
   if(window.LUCIA_START_PHASE){
-    // 直接 spawn Lucia（跳过黄金骑士）
+    // 直接 spawn Lucia（跳过黄金骑士，旧流程 / ?direct=boss）
     if(typeof loadLuciaFrames === 'function'){
-      _luciaPreloadStarted = true;
       loadLuciaFrames(()=>{
         console.log('[lucia] preload done');
         if(typeof spawnLucia === 'function' && typeof LEVEL_3 !== 'undefined'){
@@ -5501,7 +5586,9 @@ initMapImage(()=>{
       });
     }
   } else {
-    _loadKnightFrames(); // 常规流程：骑士 → Lucia
+    // RunManager 流程：预加载骑士帧，不 spawn 任何 boss
+    // boss + enemies 由 RunManager 事件驱动生成
+    _loadKnightFrames(); // 只加载帧，不 spawn
     if(typeof loadLuciaFrames === 'function'){
       _luciaPreloadStarted = true;
       loadLuciaFrames(()=>console.log('[lucia] preload done'));

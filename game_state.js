@@ -556,27 +556,50 @@
     // 刷怪（V1.0：接入 archer/bomber_enemy）
     Events.on('run:spawn_enemies', function(data){
       if(typeof window.enemies === 'undefined') return;
-      window.enemies.length = 0;
-      data.spawns.forEach(function(sp){
-        if(sp.type === 'archer' && typeof window.spawnArcher === 'function'){
-          const e = window.spawnArcher(sp.x, sp.y);
-          if(e) window.enemies.push(e);
-        }
-      });
-      console.log('[GameState] 刷怪', window.enemies.length, '个');
+      const spawns = data.spawns;
+      const _doSpawn = function(){
+        window.enemies.length = 0;
+        spawns.forEach(function(sp){
+          if(sp.type === 'archer' && typeof window.spawnArcher === 'function'){
+            const e = window.spawnArcher(sp.x, sp.y);
+            if(e) window.enemies.push(e);
+          }
+        });
+        console.log('[GameState] 刷怪', window.enemies.length, '个');
+      };
+      // 等地图切换完成
+      let waited = 0;
+      const _waitMap = function(){
+        if(window.mapReady !== false || waited > 3000){ _doSpawn(); }
+        else { waited += 50; setTimeout(_waitMap, 50); }
+      };
+      _waitMap();
     });
 
     // 召唤 Boss
     Events.on('run:spawn_boss', function(data){
       const sp = data.bossSpawn;
-      if(sp.type === 'lucia' && typeof window.spawnLucia === 'function'){
+      if(sp.type !== 'lucia') return;
+      // 等地图切换完成后再 spawn（_loadLevel 是异步的）
+      const _doSpawn = function(){
         if(typeof window._resetBoss === 'function'){
-          window._resetBoss(window.GAME_DIFFICULTY);
-        } else {
+          window._resetBoss(window.GAME_DIFFICULTY || { bossMaxHp: 80000, playerMaxHp: 100 });
+        } else if(typeof window.spawnLucia === 'function'){
           window.boss = window.spawnLucia(sp.x, sp.y);
         }
         console.log('[GameState] Boss 召唤:', sp.type);
-      }
+      };
+      // mapReady 轮询（最多等 3 秒）
+      let waited = 0;
+      const _waitMap = function(){
+        if(window.mapReady !== false || waited > 3000){
+          _doSpawn();
+        } else {
+          waited += 50;
+          setTimeout(_waitMap, 50);
+        }
+      };
+      _waitMap();
     });
 
     // RunManager 请求进入下一局
