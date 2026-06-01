@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>HUD + 奖励UI 综合测试 · 莫克夏回声</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #08080f; color: #ccc; font-family: Consolas, monospace; font-size: 12px; }
+
+  /* 游戏画布区域 */
+  #c-wrap {
+    position: relative;
+    width: 800px; height: 560px;
+    margin: 16px auto 0;
+    border: 1px solid #222;
+  }
+  canvas { display: block; background: #0a1a1a; }
+
+  /* 控制面板 */
+  .ctrl {
+    width: 800px; margin: 10px auto;
+    display: flex; gap: 8px; flex-wrap: wrap;
+    padding: 10px; background: #0e0e1a;
+    border: 1px solid #222; border-radius: 4px;
+  }
+  .btn {
+    padding: 5px 11px; border-radius: 3px;
+    border: 1px solid #334; background: #141428;
+    color: #aaa; cursor: pointer; font-family: inherit; font-size: 11px;
+  }
+  .btn:hover { border-color: #AAEEFF; color: #AAEEFF; }
+  .btn.gold { border-color: #FFD080; color: #FFD080; }
+  .btn.green { border-color: #4CAF50; color: #4CAF50; }
+
+  .checklist {
+    width: 800px; margin: 8px auto;
+    background: #0a0a14; border-left: 3px solid #4CAF50;
+    padding: 10px 14px; font-size: 11px; color: #667; line-height: 2;
+  }
+  .checklist b { color: #4CAF50; }
+</style>
+</head>
+<body>
+
+<div id="c-wrap">
+  <canvas id="c" width="800" height="560"></canvas>
+</div>
+
+<div class="ctrl">
+  <span style="color:#FFD080;font-size:11px;align-self:center">连携计数：</span>
+  <button class="btn" onclick="mockJHit()">J命中+1</button>
+  <button class="btn" onclick="mockKHit()">K命中+1</button>
+  <button class="btn" onclick="mockIBlock()">I格挡+1</button>
+  <span style="color:#556;margin:0 6px">|</span>
+  <span style="color:#FFD080;font-size:11px;align-self:center">法宝：</span>
+  <button class="btn" onclick="equipRelic('magnetic_core')">装备磁石灵核</button>
+  <button class="btn" onclick="equipRelic('returning_blade')">装备轮回刃</button>
+  <button class="btn" onclick="equipRelic('split_mirror')">装备分形镜</button>
+  <button class="btn" onclick="equipRelic('sword_heart')">装备剑心通明</button>
+  <button class="btn" onclick="RelicManager.reset(); refreshRelicCount()">清空背包</button>
+  <span style="color:#556;margin:0 6px">|</span>
+  <button class="btn gold" onclick="triggerReward()">弹出奖励UI</button>
+  <button class="btn gold" onclick="triggerCombo()">触发道法激活</button>
+  <button class="btn" onclick="RelicManager.reset();mockReset()">重置全部</button>
+</div>
+
+<div class="checklist">
+  <b>HUD + 奖励UI 验收标准：</b><br>
+  ✅ 1. 画布左下角显示3条连携进度条（J/K/I），计数变化实时更新<br>
+  ✅ 2. J进度到5/10时进度条满格闪烁（有闪光效果）<br>
+  ✅ 3. 画布右下角显示6个背包格，装备法宝后格子填充emoji图标<br>
+  ✅ 4. rare法宝边框蓝色，legendary边框金色<br>
+  ✅ 5. 装备归元剑材料后，背包区域出现金色外发光<br>
+  ✅ 6. "弹出奖励UI"→ 全屏半透明遮罩+3张法宝卡，点击选择后消失<br>
+  ✅ 7. 选择能触发道法的法宝时，卡片顶部有"⚡道法名"徽章<br>
+  ✅ 8. 触发道法后画布中央出现飘字（⚡道法名），2秒后消失<br>
+  ✅ 9. 左上角显示当前房间名称和进度点<br>
+  ✅ 10. 无控制台报错
+</div>
+
+<!-- 依赖 -->
+<script src="../core/event_bus.js"></script>
+<script src="../core/relic_system.js"></script>
+<script src="../levels/level_2.js"></script>
+<script src="../levels/level_3.js"></script>
+<script src="../core/run_manager.js"></script>
+<script src="../ui/skill_hud.js"></script>
+<script src="../ui/relic_reward.js"></script>
+
+<script>
+// ── mock 全局 ──
+window.player      = { hp: 10000 };
+window.playerHp    = 10000;
+window.playerMaxHp = 10000;
+window.boss        = { state: 'idle' };
+window.DEF_PARRY_WINDOW = 0.18;
+window.GAME_STATE  = 'playing';
+
+// mock role3 连携计数器
+window.role3 = {
+  MAX_SWORDS: 8,
+  _jHitCount: 0, _kHitCount: 0, _iBlockCount: 0,
+  _bTrigCount: 0, _mTrigCount: 0, _cdUAuto: 30
+};
+
+// 启动一局模拟（让 RunManager 有房间数据）
+RelicManager.reset();
+RunManager.startRun({ name: '修行' });
+// 立即跳过法宝选择（测试用）
+Events.once('run:show_relic_select', function(d){ if(d.onSkip) d.onSkip(); });
+
+// ── 操作函数 ──
+function mockJHit(){
+  role3._jHitCount = Math.min(10, role3._jHitCount + 1);
+}
+function mockKHit(){
+  role3._kHitCount = Math.min(2, role3._kHitCount + 1);
+}
+function mockIBlock(){
+  role3._iBlockCount = Math.min(3, role3._iBlockCount + 1);
+}
+function equipRelic(id){
+  RelicManager.equip(id);
+}
+function refreshRelicCount(){}
+
+function triggerReward(){
+  var pool = RunManager._buildRelicPool(3, false);
+  RelicReward.show(pool,
+    function(id){ console.log('选择:', id); },
+    function(){ console.log('跳过'); }
+  );
+}
+
+function triggerCombo(){
+  // 装备归元剑材料触发道法
+  RelicManager.equip('magnetic_core');
+  RelicManager.equip('returning_blade');
+}
+
+function mockReset(){
+  role3._jHitCount = 0;
+  role3._kHitCount = 0;
+  role3._iBlockCount = 0;
+}
+
+// Events 日志
+Events.on('relic:equipped',  function(d){ console.log('[✅]装备:', d.relic.name); });
+Events.on('combo:activated', function(d){ console.log('[⚡]道法:', d.combo.name); });
+
+// ── 渲染循环 ──
+var canvas = document.getElementById('c');
+var ctx    = canvas.getContext('2d');
+
+// 模拟地图底色（随便画格子）
+function drawBg(){
+  ctx.fillStyle = '#0a1a1a';
+  ctx.fillRect(0, 0, 800, 560);
+  ctx.strokeStyle = '#112';
+  ctx.lineWidth = 1;
+  for(var x=0;x<800;x+=24){
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,560); ctx.stroke();
+  }
+  for(var y=0;y<560;y+=24){
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(800,y); ctx.stroke();
+  }
+  // 玩家位置示意
+  ctx.fillStyle = '#AAEEFF';
+  ctx.beginPath();
+  ctx.arc(400, 280, 12, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = '9px Consolas';
+  ctx.textAlign = 'center';
+  ctx.fillText('白衣', 400, 310);
+}
+
+function loop(){
+  drawBg();
+  if(window.RelicManager) RelicManager.update(1/60);
+  if(window.SkillHUD) SkillHUD.render(ctx);
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

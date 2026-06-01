@@ -566,6 +566,9 @@ window.addEventListener('unhandledrejection',function(e){
 <script src="player_ai.js"></script>
 <script src="mobile_ui.js"></script>
 <script src="game_state.js"></script>
+<script src="ui/skill_hud.js"></script>
+<script src="ui/relic_reward.js"></script>
+<script src="ui/result_screen.js"></script>
 <script>
 // ── 常量 ──────────────────────────────────
 const TILE = 24;
@@ -5289,6 +5292,11 @@ function draw(){
     ctx.beginPath();
     ctx.arc(Math.floor(player.x-ox())+player.facing*28,Math.floor((player.y-oy())*ISO_Y_SCALE)-10,24,0,Math.PI*2);
     ctx.stroke(); ctx.restore();
+  }
+
+  // ── Roguelite HUD（连携进度 + 背包 + 房间信息）──
+  if(window.SkillHUD && typeof window.SkillHUD.render === 'function'){
+    window.SkillHUD.render(ctx);
   }
 }
 
