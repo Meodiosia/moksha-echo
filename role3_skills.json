@@ -1,0 +1,68 @@
+[
+  {
+    "id": "Atk1",
+    "name": "J 射剑",
+    "cdBase": 0.25,
+    "range": 260,
+    "dmg": 12,
+    "spd": 380,
+    "chainBonus": 3
+  },
+  {
+    "id": "S",
+    "name": "S 闪避",
+    "cdBase": 2.7,
+    "duration": 0.18,
+    "spd": 520,
+    "invulnerable": true
+  },
+  {
+    "id": "L",
+    "name": "L 蓄力剑阵",
+    "cdBase": 15.5,
+    "chargeMax": 1.8,
+    "dmg": 22,
+    "range": 180,
+    "consumes": 2
+  },
+  {
+    "id": "O",
+    "name": "O 蓄力射",
+    "cdBase": 12,
+    "chargeMax": 1.4,
+    "dmg": 18,
+    "spd": 450,
+    "consumes": 3
+  },
+  {
+    "id": "Atk4",
+    "name": "P 剑雨",
+    "cdBase": 16,
+    "count": 3,
+    "dmg": 16,
+    "range_each": 50
+  },
+  {
+    "id": "M",
+    "name": "M 环刃",
+    "cdBase": 10.5,
+    "duration": 3,
+    "dps": 28,
+    "range": 45,
+    "hitInterval": 0.08
+  },
+  {
+    "id": "U",
+    "name": "大招",
+    "cdBase": 18,
+    "swordCount": 12,
+    "duration": 1.5,
+    "dmg": 30
+  },
+  {
+    "id": "N",
+    "name": "N 时停斩",
+    "cdBase": 11,
+    "recallCount": 4
+  }
+]

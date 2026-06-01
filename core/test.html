@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>core/test.html — config / save / events</title>
+<style>
+  body { font-family: Consolas, monospace; background:#111; color:#ddd; padding:16px; }
+  h1 { color:#FFD080; margin:0 0 8px; font-size:18px; }
+  #log { white-space:pre-wrap; background:#0a0a0a; border:1px solid #333; padding:10px; height:60vh; overflow:auto; }
+  .pass { color:#7CFC7C; }
+  .fail { color:#FF6060; }
+  button { background:#222; color:#FFD080; border:1px solid #555; padding:6px 12px; margin-right:6px; cursor:pointer; font-family:inherit; }
+</style>
+</head>
+<body>
+  <h1>core API test</h1>
+  <div>
+    <button onclick="runAll()">Run tests</button>
+    <button onclick="window.Save.clear(); log('Save cleared.')">Save.clear()</button>
+    <button onclick="document.getElementById('log').textContent=''">Clear log</button>
+  </div>
+  <pre id="log"></pre>
+
+<script src="config.js"></script>
+<script src="event_bus.js"></script>
+<script src="save_system.js"></script>
+<script>
+  var logEl = document.getElementById('log');
+  function log(msg, cls) {
+    var line = document.createElement('span');
+    if (cls) line.className = cls;
+    line.textContent = msg + '\n';
+    logEl.appendChild(line);
+    console.log(msg);
+  }
+  var pass = 0, fail = 0;
+  function assert(cond, name) {
+    if (cond) { pass++; log('  PASS  ' + name, 'pass'); }
+    else      { fail++; log('  FAIL  ' + name, 'fail'); }
+  }
+  function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+
+  function testConfig() {
+    log('-- GAME_CONFIG --');
+    var C = window.GAME_CONFIG;
+    assert(!!C, 'window.GAME_CONFIG exists');
+    assert(C.player.maxHp === 100, 'player.maxHp = 100');
+    assert(C.player.dashCD === 0.85, 'player.dashCD = 0.85');
+    assert(C.lucia.maxHp === 1500, 'lucia.maxHp = 1500');
+    assert(C.lucia.ringRushCount === 5, 'lucia.ringRushCount = 5');
+    assert(C.combat.perfectParryWindow === 0.18, 'combat.perfectParryWindow = 0.18');
+    assert(C.ui.primaryColor === '#FFD080', 'ui.primaryColor = #FFD080');
+    assert(C.audio.bgmVolume === 0.6, 'audio.bgmVolume = 0.6');
+  }
+
+  function testEvents() {
+    log('-- Events --');
+    var E = window.Events;
+    E.clear();
+    var got = [];
+    var unsub = E.on('player.hurt', function (dmg, src) { got.push(['hurt', dmg, src]); });
+    E.emit('player.hurt', 10, 'spike');
+    E.emit('player.hurt', 5, 'fire');
+    assert(got.length === 2 && got[0][1] === 10 && got[1][2] === 'fire', 'on/emit deliver args');
+    unsub();
+    E.emit('player.hurt', 99);
+    assert(got.length === 2, 'unsubscribe stops delivery');
+
+    var onceCount = 0;
+    E.once('boss.death', function () { onceCount++; });
+    E.emit('boss.death'); E.emit('boss.death');
+    assert(onceCount === 1, 'once fires exactly once');
+
+    var a = 0, b = 0;
+    var fnA = function () { a++; };
+    var fnB = function () { b++; };
+    E.on('ui.menu_open', fnA);
+    E.on('ui.menu_open', fnB);
+    E.off('ui.menu_open', fnA);
+    E.emit('ui.menu_open');
+    assert(a === 0 && b === 1, 'off removes correct handler');
+
+    // off during emit must not crash / skip later handlers
+    E.clear('ui.menu_open');
+    var seq = [];
+    var u1, u2, u3;
+    u1 = E.on('ui.menu_open', function () { seq.push(1); u2(); });
+    u2 = E.on('ui.menu_open', function () { seq.push(2); });
+    u3 = E.on('ui.menu_open', function () { seq.push(3); });
+    E.emit('ui.menu_open');
+    assert(seq.length === 3 && seq[0] === 1 && seq[2] === 3, 'safe off() during emit (snapshot)');
+
+    // throwing handler must not block others
+    E.clear('player.death');
+    var ran = false;
+    E.on('player.death', function () { throw new Error('boom'); });
+    E.on('player.death', function () { ran = true; });
+    E.emit('player.death');
+    assert(ran === true, 'throwing handler isolated');
+
+    E.clear();
+  }
+
+  function testSave() {
+    log('-- Save --');
+    var S = window.Save;
+    assert(S.KEY === 'demo3c_save_v1', 'KEY = demo3c_save_v1');
+
+    S.clear();
+    var d = S.load();
+    assert(eq(d.progress.unlockedLevels, [1]), 'load() returns defaults when empty');
+    assert(d.progress.deathCount === 0, 'defaults.progress.deathCount = 0');
+    assert(d.progress.bestTime === Infinity, 'defaults.progress.bestTime = Infinity');
+
+    S.patch({ progress: { deathCount: 7 }, stats: { parryCount: 12 } });
+    var d2 = S.load();
+    assert(d2.progress.deathCount === 7, 'patch persists progress.deathCount');
+    assert(d2.stats.parryCount === 12, 'patch persists custom stats key');
+    assert(eq(d2.progress.unlockedLevels, [1]), 'patch keeps untouched fields');
+
+    // Infinity round-trip
+    S.patch({ progress: { bestTime: Infinity } });
+    assert(S.load().progress.bestTime === Infinity, 'Infinity round-trips through JSON');
+
+    // finite bestTime
+    S.patch({ progress: { bestTime: 42.5 } });
+    assert(S.load().progress.bestTime === 42.5, 'finite bestTime persists');
+
+    // migration: simulate v0 (no _v) old save
+    S.clear();
+    try {
+      localStorage.setItem(S.KEY, JSON.stringify({
+        settings: { masterVolume: 0.4 },
+        progress: { unlockedLevels: [1, 2], deathCount: 3 }
+        // no _v, no stats, no bestTime
+      }));
+    } catch (e) {}
+    var migrated = S.load();
+    assert(migrated._v === S.SCHEMA_VERSION, 'migrate stamps current _v');
+    assert(migrated.settings.masterVolume === 0.4, 'migrate keeps user setting');
+    assert(eq(migrated.progress.unlockedLevels, [1, 2]), 'migrate keeps user progress');
+    assert(migrated.progress.bestTime === Infinity, 'migrate fills missing bestTime');
+    assert(typeof migrated.stats === 'object', 'migrate fills missing stats');
+
+    // corrupt save -> defaults
+    try { localStorage.setItem(S.KEY, '{not json'); } catch (e) {}
+    var safe = S.load();
+    assert(safe.progress.deathCount === 0, 'corrupt save falls back to defaults');
+
+    S.clear();
+  }
+
+  function runAll() {
+    logEl.textContent = '';
+    pass = 0; fail = 0;
+    testConfig();
+    testEvents();
+    testSave();
+    log('');
+    log('=== ' + pass + ' passed, ' + fail + ' failed ===', fail ? 'fail' : 'pass');
+  }
+
+  // auto-run
+  runAll();
+</script>
+</body>
+</html>

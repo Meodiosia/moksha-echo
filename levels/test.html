@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>level_2 — mapData 静态预览</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #0c0608; color: #e8d8c0;
+    font-family: 'Consolas', 'Microsoft YaHei', monospace; }
+  header { padding: 10px 14px; border-bottom: 1px solid #3a1a08; }
+  header h1 { margin: 0; font-size: 16px; color: #ffb55a; letter-spacing: 1px; }
+  header .meta { margin-top: 4px; font-size: 12px; color: #a08070; }
+  .legend { display: flex; gap: 16px; margin-top: 6px; font-size: 12px; }
+  .legend i { display: inline-block; width: 12px; height: 12px;
+    vertical-align: middle; margin-right: 4px; border: 1px solid #000; }
+  .floor { background: #6a3018; }
+  .void  { background: #0c0608; }
+  .spawn { background: #3aa0ff; }
+  .boss  { background: #ff3a3a; }
+  .enemy { background: #ffd060; }
+  .prop  { background: #b070ff; }
+  main   { padding: 14px; }
+  canvas { background: #050203; image-rendering: pixelated;
+    border: 1px solid #3a1a08; display: block; }
+  .err   { color: #ff8060; padding: 14px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1 id="title">level_2</h1>
+    <div class="meta" id="meta"></div>
+    <div class="legend">
+      <span><i class="floor"></i>floor (1)</span>
+      <span><i class="void"></i>void (0)</span>
+      <span><i class="spawn"></i>player</span>
+      <span><i class="boss"></i>boss</span>
+      <span><i class="enemy"></i>enemy spawn</span>
+      <span><i class="prop"></i>ambient prop</span>
+    </div>
+  </header>
+  <main>
+    <canvas id="cv"></canvas>
+    <div id="err" class="err"></div>
+  </main>
+
+<script src="level_2.js"></script>
+<script src="level_index.js"></script>
+<script>
+(function () {
+  const lv = window.LEVEL_2;
+  const errEl = document.getElementById('err');
+  if (!lv || !lv.mapData) {
+    errEl.textContent = 'window.LEVEL_2 未定义或缺少 mapData';
+    return;
+  }
+
+  // 头信息
+  document.getElementById('title').textContent =
+    'level_' + lv.id + ' — ' + lv.name;
+  document.getElementById('meta').textContent =
+    lv.mapW + ' × ' + lv.mapH + ' tiles  |  spawn=(' +
+    (lv.spawnPoint.x / lv.tile) + ',' + (lv.spawnPoint.y / lv.tile) +
+    ')  boss=(' + (lv.bossSpawn.x / lv.tile) + ',' +
+    (lv.bossSpawn.y / lv.tile) + ')  |  ' + lv.description;
+
+  // 画布
+  const CELL = 12;
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  cv.width  = lv.mapW * CELL;
+  cv.height = lv.mapH * CELL;
+
+  // 背景
+  ctx.fillStyle = lv.bgColor || '#0c0608';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+
+  // tile floor
+  for (let y = 0; y < lv.mapH; y++) {
+    for (let x = 0; x < lv.mapW; x++) {
+      const v = lv.mapData[y][x];
+      if (v === 1) {
+        // 简单深浅交错增加视觉
+        ctx.fillStyle = ((x + y) & 1) ? '#6a3018' : '#5a2810';
+        ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+      }
+    }
+  }
+
+  // 网格
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= lv.mapW; x++) {
+    ctx.beginPath();
+    ctx.moveTo(x * CELL + 0.5, 0);
+    ctx.lineTo(x * CELL + 0.5, cv.height);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= lv.mapH; y++) {
+    ctx.beginPath();
+    ctx.moveTo(0, y * CELL + 0.5);
+    ctx.lineTo(cv.width, y * CELL + 0.5);
+    ctx.stroke();
+  }
+
+  // 装饰点（紫）
+  if (Array.isArray(lv.ambientProps)) {
+    ctx.fillStyle = '#b070ff';
+    for (const p of lv.ambientProps) {
+      ctx.fillRect(p.tx * CELL + 2, p.ty * CELL + 2, CELL - 4, CELL - 4);
+    }
+  }
+
+  // 敌人 spawn（金）
+  if (Array.isArray(lv.enemySpawns)) {
+    ctx.fillStyle = '#ffd060';
+    for (const e of lv.enemySpawns) {
+      const tx = e.x / lv.tile, ty = e.y / lv.tile;
+      ctx.beginPath();
+      ctx.arc(tx * CELL + CELL / 2, ty * CELL + CELL / 2, CELL * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // 玩家 spawn（蓝十字）
+  function drawCross(tx, ty, color) {
+    const cx = tx * CELL + CELL / 2;
+    const cy = ty * CELL + CELL / 2;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - CELL, cy); ctx.lineTo(cx + CELL, cy);
+    ctx.moveTo(cx, cy - CELL); ctx.lineTo(cx, cy + CELL);
+    ctx.stroke();
+  }
+  drawCross(lv.spawnPoint.x / lv.tile, lv.spawnPoint.y / lv.tile, '#3aa0ff');
+  drawCross(lv.bossSpawn.x  / lv.tile, lv.bossSpawn.y  / lv.tile, '#ff3a3a');
+
+  // LEVEL_INDEX 健康检查
+  const idx = window.LEVEL_INDEX;
+  if (idx) {
+    const ids = idx.list.map(function (l) { return l.id; }).join(',');
+    errEl.style.color = '#80c060';
+    errEl.textContent =
+      'LEVEL_INDEX OK — list=[' + ids + ']  get(2)=' +
+      (idx.get(2) ? idx.get(2).name : 'null') +
+      '  next(1)=' + (idx.next(1) ? idx.next(1).name : 'null');
+  } else {
+    errEl.textContent = 'window.LEVEL_INDEX 未定义';
+  }
+})();
+</script>
+</body>
+</html>

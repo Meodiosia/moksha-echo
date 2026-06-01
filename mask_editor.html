@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Ground Mask 编辑器</title>
+<style>
+  body{margin:0;padding:0;background:#222;color:#ccc;font:13px monospace;}
+  #wrap{padding:8px;}
+  #toolbar{position:sticky;top:0;background:#333;padding:8px 10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #555;z-index:10;}
+  #toolbar button{background:#444;color:#eee;border:1px solid #666;padding:6px 14px;cursor:pointer;font-family:monospace;}
+  #toolbar button:hover{background:#555;}
+  #toolbar button.active{background:#0a6;border-color:#0c8;}
+  #toolbar label{display:inline-flex;align-items:center;gap:4px;}
+  #info{margin-left:auto;color:#8c8;}
+  #cv-wrap{padding:10px;}
+  canvas{display:block;cursor:crosshair;border:1px solid #555;}
+  #out{position:fixed;bottom:0;left:0;right:0;background:#111;padding:8px;border-top:2px solid #0a6;display:none;}
+  #out textarea{width:100%;height:80px;background:#000;color:#0f0;border:none;font:11px monospace;padding:4px;resize:vertical;}
+  .hint{font-size:11px;color:#888;margin-left:6px;}
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <button id="btnPaint" class="active">画可走（左键）</button>
+  <button id="btnErase">画禁走（右键）</button>
+  <label>笔刷:
+    <select id="brushSize">
+      <option value="1">1×1</option>
+      <option value="2" selected>2×2</option>
+      <option value="3">3×3</option>
+      <option value="5">5×5</option>
+      <option value="8">8×8</option>
+    </select>
+  </label>
+  <label><input type="checkbox" id="showGrid" checked> 网格</label>
+  <label><input type="checkbox" id="showOverlay" checked> 颜色叠加</label>
+  <button id="btnReset">重置(用 ground_mask.js)</button>
+  <button id="btnExport">导出 ground_mask.js</button>
+  <button id="btnDownloadPng">下载预览</button>
+  <span id="info">--</span>
+  <span class="hint">左键=可走（绿）  右键=禁走（红）  滚轮=缩放</span>
+</div>
+<div id="cv-wrap"><canvas id="cv"></canvas></div>
+<div id="out">
+  <div style="margin-bottom:4px;color:#0f8;">点击全选复制下面内容，覆盖到 game/ground_mask.js</div>
+  <textarea id="outTxt"></textarea>
+</div>
+<script src="ground_mask.js"></script>
+<script>
+const MAP_W = (typeof GROUND_MASK_W !== 'undefined') ? GROUND_MASK_W : 72;
+const MAP_H = (typeof GROUND_MASK_H !== 'undefined') ? GROUND_MASK_H : 48;
+let mask = new Uint8Array(MAP_W * MAP_H);
+
+// 初始化 mask
+function loadInit() {
+  if(typeof GROUND_MASK !== 'undefined') {
+    for(let i=0; i<MAP_W*MAP_H; i++)
+      mask[i] = GROUND_MASK.charCodeAt(i) === 49 ? 1 : 0;
+  }
+}
+loadInit();
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let bgImg = new Image();
+let scale = 1.5;
+let imgReady = false;
+
+bgImg.onload = () => {
+  imgReady = true;
+  scale = Math.min((window.innerWidth - 40) / bgImg.width, (window.innerHeight - 100) / bgImg.height);
+  if(scale > 1) scale = 1;
+  if(scale < 0.5) scale = 0.5;
+  resize();
+  draw();
+};
+bgImg.onerror = () => {
+  console.warn('ground.png 加载失败');
+  resize();
+  draw();
+};
+bgImg.src = 'ground.png';
+
+function resize() {
+  const w = imgReady ? bgImg.width : MAP_W * 16;
+  const h = imgReady ? bgImg.height : MAP_H * 16;
+  cv.width  = w * scale;
+  cv.height = h * scale;
+}
+
+function tilePixelSize() {
+  const w = imgReady ? bgImg.width : MAP_W * 16;
+  return (w * scale) / MAP_W;
+}
+
+function draw() {
+  if(imgReady) ctx.drawImage(bgImg, 0, 0, cv.width, cv.height);
+  else { ctx.fillStyle='#111'; ctx.fillRect(0,0,cv.width,cv.height); }
+
+  const tsx = cv.width / MAP_W;
+  const tsy = cv.height / MAP_H;
+
+  // 颜色叠加
+  if(document.getElementById('showOverlay').checked) {
+    for(let y=0; y<MAP_H; y++) for(let x=0; x<MAP_W; x++) {
+      ctx.fillStyle = mask[y*MAP_W+x] ? 'rgba(0,255,0,0.35)' : 'rgba(255,0,0,0.35)';
+      ctx.fillRect(x*tsx, y*tsy, tsx, tsy);
+    }
+  }
+
+  // 网格
+  if(document.getElementById('showGrid').checked) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    for(let x=0; x<=MAP_W; x++) { ctx.moveTo(x*tsx, 0); ctx.lineTo(x*tsx, cv.height); }
+    for(let y=0; y<=MAP_H; y++) { ctx.moveTo(0, y*tsy); ctx.lineTo(cv.width, y*tsy); }
+    ctx.stroke();
+  }
+
+  updateInfo();
+}
+
+function updateInfo() {
+  let walkN = 0;
+  for(let i=0;i<mask.length;i++) if(mask[i]) walkN++;
+  document.getElementById('info').textContent =
+    `${MAP_W}×${MAP_H}  walkable=${walkN}/${mask.length} (${Math.round(walkN*100/mask.length)}%)`;
+}
+
+// ── 画笔 ──
+let painting = false;
+let paintMode = 1; // 1=walkable, 0=block
+
+function paintAt(clientX, clientY) {
+  const rect = cv.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  const tx = Math.floor(x / (cv.width/MAP_W));
+  const ty = Math.floor(y / (cv.height/MAP_H));
+  const brush = parseInt(document.getElementById('brushSize').value);
+  const r = Math.floor(brush/2);
+  for(let dy=-r; dy<=brush-1-r; dy++)
+    for(let dx=-r; dx<=brush-1-r; dx++) {
+      const nx = tx+dx, ny = ty+dy;
+      if(nx>=0 && ny>=0 && nx<MAP_W && ny<MAP_H)
+        mask[ny*MAP_W + nx] = paintMode;
+    }
+  draw();
+}
+
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('mousedown', e => {
+  e.preventDefault();
+  painting = true;
+  paintMode = (e.button === 2) ? 0 : 1;
+  paintAt(e.clientX, e.clientY);
+});
+window.addEventListener('mousemove', e => {
+  if(painting) paintAt(e.clientX, e.clientY);
+});
+window.addEventListener('mouseup', () => painting = false);
+
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const old = scale;
+  scale *= e.deltaY < 0 ? 1.1 : 0.9;
+  scale = Math.max(0.3, Math.min(3, scale));
+  resize();
+  draw();
+}, {passive:false});
+
+document.getElementById('btnPaint').onclick = () => {
+  paintMode = 1;
+  document.getElementById('btnPaint').classList.add('active');
+  document.getElementById('btnErase').classList.remove('active');
+};
+document.getElementById('btnErase').onclick = () => {
+  paintMode = 0;
+  document.getElementById('btnErase').classList.add('active');
+  document.getElementById('btnPaint').classList.remove('active');
+};
+document.getElementById('showGrid').onchange = draw;
+document.getElementById('showOverlay').onchange = draw;
+document.getElementById('btnReset').onclick = () => {
+  if(!confirm('重置为 ground_mask.js 当前内容？')) return;
+  loadInit(); draw();
+};
+
+document.getElementById('btnExport').onclick = () => {
+  let s = '';
+  for(let i=0; i<mask.length; i++) s += mask[i] ? '1' : '0';
+  const code =
+    `// hand-edited via mask_editor.html\n` +
+    `const GROUND_MASK_W = ${MAP_W};\n` +
+    `const GROUND_MASK_H = ${MAP_H};\n` +
+    `const GROUND_MASK = "${s}";\n`;
+  const out = document.getElementById('out');
+  const ta  = document.getElementById('outTxt');
+  out.style.display = 'block';
+  ta.value = code;
+  ta.focus(); ta.select();
+
+  // 同时尝试触发文件下载
+  const blob = new Blob([code], {type:'text/javascript'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ground_mask.js';
+  a.textContent = '下载 ground_mask.js';
+  a.style.cssText = 'display:inline-block;margin-top:6px;color:#0f8;';
+  out.appendChild(a);
+  setTimeout(() => a.click(), 100);
+};
+
+document.getElementById('btnDownloadPng').onclick = () => {
+  const a = document.createElement('a');
+  a.href = cv.toDataURL('image/png');
+  a.download = 'mask_preview.png';
+  a.click();
+};
+
+draw();
+</script>
+</body>
+</html>

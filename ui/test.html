@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>UI Overlay Test — Hellspire</title>
+<link rel="stylesheet" href="ui.css">
+<style>
+  html,body{margin:0;background:#0a0403;color:#f3d7c2;font-family:Consolas,monospace;}
+  #c-wrap{
+    position:relative;
+    width:800px;height:560px;
+    margin:24px auto;
+    background:#120605;
+    border:1px solid #5a1a14;
+    box-shadow:0 0 30px rgba(255,80,30,.25);
+    overflow:hidden;
+  }
+  #c{display:block;width:800px;height:560px;background:linear-gradient(180deg,#2a0d08,#0a0403);}
+  #toolbar{
+    width:800px;margin:0 auto 12px;display:flex;flex-wrap:wrap;gap:6px;
+    padding:8px;background:#1a0a08;border:1px solid #5a1a14;
+  }
+  #toolbar button{
+    background:#2a100c;color:#f3d7c2;border:1px solid #5a1a14;
+    padding:6px 12px;cursor:pointer;font:600 12px Consolas,monospace;
+    letter-spacing:.1em;text-transform:uppercase;
+  }
+  #toolbar button:hover{background:#3a1410;color:#ff8a40;border-color:#ff8a40;}
+  #log{
+    width:800px;margin:8px auto;padding:8px 10px;
+    background:#0f0604;border:1px solid #3a1410;
+    font:11px/1.5 Consolas,monospace;color:#a8836f;
+    height:80px;overflow:auto;
+  }
+  #log .ok{color:#ffcc66;}
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button data-act="start">Show Start</button>
+  <button data-act="pause">Show Pause</button>
+  <button data-act="dead">Show GameOver</button>
+  <button data-act="win">Show Victory</button>
+  <button data-act="result-S">Result S</button>
+  <button data-act="result-A">Result A</button>
+  <button data-act="result-B">Result B</button>
+  <button data-act="result-C">Result C</button>
+  <button data-act="hide">Hide</button>
+  <button data-act="cd-tick">+1s CD</button>
+  <button data-act="cd-reset">Reset CDs</button>
+  <button data-act="sanc">Trigger Sanctuary</button>
+</div>
+
+<div id="c-wrap">
+  <canvas id="c" width="800" height="560"></canvas>
+</div>
+
+<div id="log"></div>
+
+<script>
+  // Stub SFX so hover/click hooks have something to call
+  window.SFX = {
+    play: function (name) {
+      log('SFX: ' + name);
+    }
+  };
+  function log(msg, ok) {
+    var l = document.getElementById('log');
+    var d = document.createElement('div');
+    if (ok) d.className = 'ok';
+    d.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+    l.appendChild(d);
+    l.scrollTop = l.scrollHeight;
+  }
+</script>
+
+<script src="menu_overlay.js"></script>
+<script src="skill_hud.js"></script>
+<script src="result_screen.js"></script>
+
+<script>
+  // Hint MenuUI to load css from same dir (we already linked it)
+  MenuUI.cssHref = 'ui.css';
+
+  // ---- mock player with cooldowns ----
+  var player = {
+    cdHolyCharge: 0,
+    cdTwinMoon:   0,
+    cdSanctuary:  0,
+    sanctuaryT:   0,
+    dashCooldown: 0
+  };
+
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+
+  function drawBg() {
+    // simple "arena" background so HUD legibility is testable
+    var g = ctx.createLinearGradient(0, 0, 0, 560);
+    g.addColorStop(0, '#2a0d08');
+    g.addColorStop(1, '#0a0403');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 800, 560);
+
+    ctx.fillStyle = 'rgba(255,138,64,.06)';
+    for (var i = 0; i < 800; i += 32) ctx.fillRect(i, 0, 1, 560);
+    for (var j = 0; j < 560; j += 32) ctx.fillRect(0, j, 800, 1);
+
+    ctx.fillStyle = '#ff8a40';
+    ctx.font = '14px Consolas, monospace';
+    ctx.fillText('800 x 560 canvas — SkillHUD bottom-right', 14, 22);
+    ctx.fillStyle = '#a8836f';
+    ctx.font = '11px Consolas, monospace';
+    ctx.fillText('keys J K L I U O P N — see HUD icons', 14, 40);
+  }
+
+  var last = performance.now();
+  function loop(now) {
+    var dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+
+    // tick down all cooldowns
+    if (player.cdHolyCharge > 0) player.cdHolyCharge = Math.max(0, player.cdHolyCharge - dt);
+    if (player.cdTwinMoon   > 0) player.cdTwinMoon   = Math.max(0, player.cdTwinMoon   - dt);
+    if (player.cdSanctuary  > 0) player.cdSanctuary  = Math.max(0, player.cdSanctuary  - dt);
+    if (player.sanctuaryT   > 0) player.sanctuaryT   = Math.max(0, player.sanctuaryT   - dt);
+    if (player.dashCooldown > 0) player.dashCooldown = Math.max(0, player.dashCooldown - dt);
+
+    drawBg();
+    SkillHUD.render(ctx, player);
+
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // ---- toolbar handlers ----
+  function fakeStats(rating) {
+    // craft stats so computeRating returns desired letter
+    switch (rating) {
+      case 'S': return { outcome:'victory', time:48, damage:12500, taken:30,  hits:240, maxCombo:42, deaths:0, hpRatio:0.95 };
+      case 'A': return { outcome:'victory', time:110,damage:9800,  taken:180, hits:200, maxCombo:18, deaths:0, hpRatio:0.6  };
+      case 'B': return { outcome:'victory', time:200,damage:7000,  taken:380, hits:160, maxCombo:9,  deaths:1, hpRatio:0.35 };
+      case 'C': return { outcome:'defeat',  time:240,damage:4200,  taken:900, hits:120, maxCombo:5,  deaths:1, hpRatio:0.0  };
+    }
+  }
+
+  document.getElementById('toolbar').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button');
+    if (!btn) return;
+    var act = btn.getAttribute('data-act');
+    log('action: ' + act, true);
+
+    switch (act) {
+      case 'start':
+        MenuUI.showStart({
+          onPlay:     function () { log('-> onPlay'); MenuUI.hide(); },
+          onSettings: function () { log('-> onSettings'); }
+        });
+        break;
+      case 'pause':
+        MenuUI.showPause({
+          onResume: function () { log('-> onResume'); MenuUI.hide(); },
+          onMain:   function () { log('-> onMain'); MenuUI.hide(); }
+        });
+        break;
+      case 'dead':
+        MenuUI.showGameOver(Object.assign(fakeStats('C'), {
+          onRetry: function () { log('-> onRetry'); ResultScreen.hide(); MenuUI.hide(); },
+          onMain:  function () { log('-> onMain');  ResultScreen.hide(); MenuUI.hide(); }
+        }));
+        break;
+      case 'win':
+        MenuUI.showVictory(Object.assign(fakeStats('A'), {
+          onNext: function () { log('-> onNext'); ResultScreen.hide(); MenuUI.hide(); },
+          onMain: function () { log('-> onMain'); ResultScreen.hide(); MenuUI.hide(); }
+        }));
+        break;
+      case 'result-S':
+      case 'result-A':
+      case 'result-B':
+      case 'result-C': {
+        var letter = act.split('-')[1];
+        var s = fakeStats(letter);
+        s.onRetry = function(){ log('-> onRetry'); ResultScreen.hide(); };
+        s.onNext  = function(){ log('-> onNext');  ResultScreen.hide(); };
+        s.onMain  = function(){ log('-> onMain');  ResultScreen.hide(); };
+        ResultScreen.show(s);
+        log('computed rating = ' + ResultScreen.computeRating(s));
+        break;
+      }
+      case 'hide':
+        MenuUI.hide();
+        ResultScreen.hide();
+        break;
+      case 'cd-tick':
+        player.cdHolyCharge = 4.0;
+        player.cdTwinMoon   = 6.0;
+        player.cdSanctuary  = 10.0;
+        player.dashCooldown = 0.8;
+        log('all CDs set to max');
+        break;
+      case 'cd-reset':
+        player.cdHolyCharge = player.cdTwinMoon = player.cdSanctuary = 0;
+        player.sanctuaryT = player.dashCooldown = 0;
+        log('CDs cleared');
+        break;
+      case 'sanc':
+        player.sanctuaryT = 3.0;
+        log('sanctuary active for 3s');
+        break;
+    }
+  });
+
+  log('UI test ready. isOpen=' + MenuUI.isOpen());
+</script>
+
+</body>
+</html>

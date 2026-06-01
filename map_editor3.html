@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>地图编辑器 - map3</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#111;color:#eee;font:13px monospace;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+#toolbar{background:#1a1a1a;padding:6px 10px;display:flex;gap:8px;align-items:center;flex-shrink:0;border-bottom:1px solid #333;}
+.btn{padding:4px 10px;border:1px solid #555;background:#222;color:#eee;cursor:pointer;font:12px monospace;}
+.btn:hover{background:#333;}
+.btn.active{background:#4AF;color:#000;border-color:#4AF;}
+#info{margin-left:auto;font-size:11px;color:#aaa;}
+#wrap{position:relative;flex:1;overflow:auto;}
+#bg{position:absolute;top:0;left:0;image-rendering:pixelated;}
+#overlay{position:absolute;top:0;left:0;cursor:crosshair;}
+#hint{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,.8);padding:6px 14px;border-radius:4px;font-size:12px;color:#ccc;pointer-events:none;}
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button class="btn active" id="btnWalk"   onclick="setTool('walk')">🟢 可走</button>
+  <button class="btn"        id="btnWall"   onclick="setTool('wall')">🔴 墙壁</button>
+  <button class="btn"        id="btnPlayer" onclick="setTool('player')">🔵 玩家出生</button>
+  <button class="btn"        id="btnBoss"   onclick="setTool('boss')">🟡 Boss出生</button>
+  <span style="color:#555">|</span>
+  <button class="btn" onclick="undo()">↩ 撤销</button>
+  <button class="btn" onclick="exportLevel()">💾 导出 level_3.js</button>
+  <button class="btn" onclick="loadFromGame()">🔄 加载当前</button>
+  <span id="info">鼠标移动查看 tile 坐标</span>
+</div>
+
+<div id="wrap">
+  <img id="bg" src="map3.png">
+  <canvas id="overlay"></canvas>
+</div>
+
+<div id="hint">左键 = 绘制 | 右键 = 擦除(可走) | 滚轮缩放</div>
+
+<script>
+// ── 参数 ──
+const TILE  = 24;
+const MAP_W = 72;
+const MAP_H = 48;
+const ORIG_W = 1536;  // map3.png 原始尺寸
+const ORIG_H = 1024;
+
+// ── 状态 ──
+let scale     = 1.0;
+let tool      = 'walk';   // walk/wall/player/boss
+let mapData   = [];       // 0=可走 1=墙
+let playerSpawn = {tx: 6,  ty: 24};
+let bossSpawn   = {tx: 66, ty: 24};
+let painting    = false;
+let paintVal    = 0;
+let history     = [];   // 撤销栈
+
+// 初始化 mapData（从 level_3 global 如果在 game 里打开）
+function initMap(){
+  // 尝试从同目录 level_3.js 加载，或者默认全 1
+  for(let y=0;y<MAP_H;y++){
+    mapData.push(new Array(MAP_W).fill(1));
+  }
+  // 默认十字形
+  fillRect(2,20,70,28,0);  // 横向
+  fillRect(30,2,42,46,0);  // 纵向
+  fillRect(25,18,47,30,0); // 中央大厅
+  fillRect(2,18,10,30,0);  // 西侧室
+  fillRect(62,18,70,30,0); // 东侧室
+  fillRect(26,2,46,10,0);  // 北侧室
+  fillRect(26,38,46,46,0); // 南侧室
+}
+
+function fillRect(x0,y0,x1,y1,v){
+  for(let y=Math.max(0,y0);y<=Math.min(MAP_H-1,y1);y++)
+    for(let x=Math.max(0,x0);x<=Math.min(MAP_W-1,x1);x++)
+      mapData[y][x]=v;
+}
+
+// ── Canvas 设置 ──
+const wrap    = document.getElementById('wrap');
+const bg      = document.getElementById('bg');
+const canvas  = document.getElementById('overlay');
+const ctx     = canvas.getContext('2d');
+const info    = document.getElementById('info');
+
+function setScale(s){
+  scale = Math.max(0.3, Math.min(3, s));
+  const w = ORIG_W * scale;
+  const h = ORIG_H * scale;
+  bg.style.width  = w + 'px';
+  bg.style.height = h + 'px';
+  canvas.width  = w;
+  canvas.height = h;
+  render();
+}
+
+function render(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const tw = ORIG_W / MAP_W * scale;   // tile width in screen px
+  const th = ORIG_H / MAP_H * scale;
+
+  // 绘制碰撞遮罩
+  for(let y=0;y<MAP_H;y++){
+    for(let x=0;x<MAP_W;x++){
+      const sx = x * tw, sy = y * th;
+      if(mapData[y][x]===1){
+        ctx.fillStyle = 'rgba(220,40,40,0.38)';
+        ctx.fillRect(sx,sy,tw,th);
+      }
+      // 网格线（稀疏）
+      if(scale>0.6){
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.lineWidth   = 0.5;
+        ctx.strokeRect(sx,sy,tw,th);
+      }
+    }
+  }
+
+  // 玩家出生点（蓝圈+P）
+  {
+    const sx = (playerSpawn.tx + 0.5) * tw;
+    const sy = (playerSpawn.ty + 0.5) * th;
+    const r  = Math.min(tw,th) * 0.45;
+    ctx.strokeStyle='#4AF'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle='rgba(64,170,255,0.35)';
+    ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#4AF'; ctx.font=`bold ${Math.max(8,r)}px monospace`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('P',sx,sy);
+  }
+  // Boss 出生点（黄圈+B）
+  {
+    const sx = (bossSpawn.tx + 0.5) * tw;
+    const sy = (bossSpawn.ty + 0.5) * th;
+    const r  = Math.min(tw,th) * 0.45;
+    ctx.strokeStyle='#FA0'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle='rgba(255,170,0,0.35)';
+    ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#FA0'; ctx.font=`bold ${Math.max(8,r)}px monospace`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('B',sx,sy);
+  }
+}
+
+// ── 工具 ──
+function setTool(t){
+  tool=t;
+  ['Walk','Wall','Player','Boss'].forEach(n=>{
+    document.getElementById('btn'+n).classList.toggle('active', t===n.toLowerCase());
+  });
+}
+
+function screenToTile(e){
+  const rect=canvas.getBoundingClientRect();
+  const cx=(e.clientX-rect.left);
+  const cy=(e.clientY-rect.top);
+  const tw=ORIG_W/MAP_W*scale, th=ORIG_H/MAP_H*scale;
+  const tx=Math.floor(cx/tw), ty=Math.floor(cy/th);
+  return {tx,ty};
+}
+
+function applyTool(e){
+  const {tx,ty}=screenToTile(e);
+  if(tx<0||tx>=MAP_W||ty<0||ty>=MAP_H) return;
+  if(tool==='player'){ playerSpawn={tx,ty}; render(); return; }
+  if(tool==='boss')  { bossSpawn  ={tx,ty}; render(); return; }
+  // walk/wall
+  const v = (e.button===2) ? 0 : (tool==='walk' ? 0 : 1);
+  if(mapData[ty][tx]===v) return;
+  mapData[ty][tx]=v;
+  render();
+}
+
+canvas.addEventListener('mousedown',e=>{
+  e.preventDefault();
+  painting=true;
+  history.push(mapData.map(r=>[...r]));
+  if(history.length>50) history.shift();
+  applyTool(e);
+});
+canvas.addEventListener('mousemove',e=>{
+  const {tx,ty}=screenToTile(e);
+  info.textContent=`tile(${tx},${ty})  ${mapData[ty]?mapData[ty][tx]===0?'可走':'墙':'?'}`;
+  if(painting && (tool==='walk'||tool==='wall')) applyTool(e);
+});
+canvas.addEventListener('mouseup', ()=>painting=false);
+canvas.addEventListener('mouseleave',()=>painting=false);
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+
+// 滚轮缩放
+wrap.addEventListener('wheel',e=>{
+  e.preventDefault();
+  setScale(scale * (e.deltaY<0 ? 1.12 : 0.9));
+},{passive:false});
+
+// ── 撤销 ──
+function undo(){
+  if(!history.length) return;
+  mapData = history.pop();
+  render();
+}
+
+// ── 导出 level_3.js ──
+function exportLevel(){
+  const rows = mapData.map(r=>'    ['+r.join(',')+']').join(',\n');
+  const js = `// level_3.js — 血祭十字（由地图编辑器生成）
+(function(){
+  const T = ${TILE};
+  const W = ${MAP_W};
+  const H = ${MAP_H};
+
+  const mapData = [
+${rows}
+  ];
+
+  window.LEVEL_3 = {
+    id: 3,
+    name: '血祭十字',
+    mapW: W, mapH: H, tile: T,
+    groundImg: 'ground3_clean.png',
+    mapData: mapData,
+    spawnPoint: { x: ${playerSpawn.tx} * T, y: ${playerSpawn.ty} * T },
+    bossSpawn:  { type: 'lucia', x: ${bossSpawn.tx} * T, y: ${bossSpawn.ty} * T },
+    enemies: [],
+  };
+})();
+`;
+  // 下载文件
+  const blob = new Blob([js], {type:'text/javascript'});
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = 'level_3.js';
+  a.click();
+  URL.revokeObjectURL(a.href);
+
+  // 同时打印到控制台
+  console.log('[export] level_3.js');
+  console.log(`spawnPoint: { x: ${playerSpawn.tx} * T, y: ${playerSpawn.ty} * T }`);
+  console.log(`bossSpawn:  { x: ${bossSpawn.tx} * T, y: ${bossSpawn.ty} * T }`);
+  alert(`导出完成！\n玩家: tile(${playerSpawn.tx},${playerSpawn.ty})\nBoss: tile(${bossSpawn.tx},${bossSpawn.ty})\n\n将下载的 level_3.js 替换 game/levels/level_3.js 即可`);
+}
+
+function loadFromGame(){
+  // 尝试 fetch 当前 level_3.js
+  fetch('../game/levels/level_3.js')
+    .then(r=>r.text())
+    .then(txt=>{
+      // 提取 mapData
+      const m=txt.match(/const mapData\s*=\s*\[([\s\S]*?)\];/);
+      if(!m){alert('解析失败'); return;}
+      const rows=m[1].trim().split('\n').filter(l=>l.trim().startsWith('['));
+      mapData=rows.map(l=>l.trim().replace(/[\[\]]/g,'').split(',').map(Number));
+      // 提取出生点
+      const sp=txt.match(/spawnPoint.*?x:\s*(\d+)\s*\*\s*T.*?y:\s*(\d+)\s*\*\s*T/);
+      const bs=txt.match(/bossSpawn.*?x:\s*(\d+)\s*\*\s*T.*?y:\s*(\d+)\s*\*\s*T/);
+      if(sp){playerSpawn={tx:+sp[1],ty:+sp[2]};}
+      if(bs){bossSpawn  ={tx:+bs[1],ty:+bs[2]};}
+      render();
+      alert('加载成功！');
+    }).catch(e=>alert('加载失败: '+e));
+}
+
+// ── 键盘快捷键 ──
+document.addEventListener('keydown',e=>{
+  if(e.key==='1') setTool('walk');
+  if(e.key==='2') setTool('wall');
+  if(e.key==='3') setTool('player');
+  if(e.key==='4') setTool('boss');
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();undo();}
+  if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();exportLevel();}
+});
+
+// ── 初始化 ──
+initMap();
+setScale(0.75);
+</script>
+</body>
+</html>

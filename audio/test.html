@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audio Manager – Test Console</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0d0d14;
+    color: #c9d1d9;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  h1 {
+    font-size: 18px;
+    color: #e6edf3;
+    margin-bottom: 4px;
+  }
+
+  .subtitle {
+    color: #6e7681;
+    font-size: 12px;
+    margin-bottom: 20px;
+  }
+
+  /* ── layout ───────────────────────────────────── */
+  .layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+
+  /* ── panels ───────────────────────────────────── */
+  .panel {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    background: #1c2128;
+    border-bottom: 1px solid #30363d;
+    padding: 8px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #8b949e;
+  }
+
+  .panel-body {
+    padding: 12px 14px;
+  }
+
+  /* ── controls panel ───────────────────────────── */
+  .ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .ctrl-row label {
+    flex: 0 0 90px;
+    color: #8b949e;
+    font-size: 12px;
+  }
+
+  input[type="range"] {
+    flex: 1;
+    accent-color: #58a6ff;
+    cursor: pointer;
+  }
+
+  .val-badge {
+    width: 36px;
+    text-align: right;
+    color: #58a6ff;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+  }
+
+  /* ── buttons ──────────────────────────────────── */
+  button {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #c9d1d9;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 5px 10px;
+    transition: background 0.12s, border-color 0.12s;
+    white-space: nowrap;
+  }
+  button:hover  { background: #30363d; border-color: #8b949e; }
+  button:active { background: #161b22; }
+
+  button.danger { border-color: #da3633; color: #f85149; }
+  button.danger:hover { background: #3d1a19; }
+
+  button.success { border-color: #238636; color: #3fb950; }
+  button.success:hover { background: #1a3a1e; }
+
+  button.accent { border-color: #1f6feb; color: #58a6ff; }
+  button.accent:hover { background: #1a2a3d; }
+
+  button.loading {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* ── sfx grid ─────────────────────────────────── */
+  .sfx-section {
+    margin-bottom: 14px;
+  }
+
+  .sfx-section-title {
+    color: #8b949e;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #30363d;
+    margin-bottom: 8px;
+  }
+
+  .sfx-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .sfx-btn {
+    font-size: 11px;
+    padding: 4px 9px;
+    position: relative;
+  }
+
+  .sfx-btn.loaded::after {
+    content: '';
+    position: absolute;
+    top: 3px; right: 3px;
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: #3fb950;
+  }
+
+  .sfx-btn.error::after {
+    background: #f85149;
+  }
+
+  /* ── log ──────────────────────────────────────── */
+  #log {
+    background: #010409;
+    border-radius: 6px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 10px 12px;
+  }
+
+  .log-line { margin-bottom: 2px; }
+  .log-time { color: #3d444d; }
+  .log-info  { color: #58a6ff; }
+  .log-ok    { color: #3fb950; }
+  .log-warn  { color: #d29922; }
+  .log-err   { color: #f85149; }
+
+  /* ── BGM row ──────────────────────────────────── */
+  .bgm-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+
+  /* ── status bar ───────────────────────────────── */
+  #statusBar {
+    font-size: 11px;
+    color: #6e7681;
+    margin-top: 14px;
+    padding: 6px 0;
+    border-top: 1px solid #30363d;
+  }
+
+  #statusBar span { color: #58a6ff; }
+</style>
+</head>
+<body>
+
+<h1>🔊 Web Audio – SFX &amp; BGM Test Console</h1>
+<p class="subtitle">All sounds load from freesound.org placeholder URLs — failures show red dot (silent buffer used). Click any button to play.</p>
+
+<div class="layout">
+
+  <!-- ── Left sidebar ──────────────────────────── -->
+  <div>
+
+    <!-- Init / Preload -->
+    <div class="panel" style="margin-bottom:12px">
+      <div class="panel-header">Engine</div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
+        <button id="btnInit" class="accent" onclick="doInit()">▶ Init AudioContext</button>
+        <button id="btnPreloadAll" onclick="doPreloadAll()">⬇ Preload All SFX</button>
+        <button onclick="doPreloadBGM()">⬇ Preload BGM Keys</button>
+      </div>
+    </div>
+
+    <!-- Master volume -->
+    <div class="panel" style="margin-bottom:12px">
+      <div class="panel-header">SFX Master Volume</div>
+      <div class="panel-body">
+        <div class="ctrl-row">
+          <label>Volume</label>
+          <input type="range" id="sfxVol" min="0" max="1" step="0.01" value="1"
+            oninput="SFX.setMasterVolume(+this.value); document.getElementById('sfxVolVal').textContent = (+this.value).toFixed(2)">
+          <span class="val-badge" id="sfxVolVal">1.00</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- BGM controls -->
+    <div class="panel" style="margin-bottom:12px">
+      <div class="panel-header">BGM Controls</div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
+
+        <div class="bgm-grid" id="bgmBtns"></div>
+
+        <button class="danger" onclick="BGM.stop(800); log('BGM.stop(800ms fade)', 'warn')">⏹ Stop BGM (800ms)</button>
+
+        <div class="ctrl-row">
+          <label>BGM Volume</label>
+          <input type="range" id="bgmVol" min="0" max="1" step="0.01" value="1"
+            oninput="BGM.setVolume(+this.value); document.getElementById('bgmVolVal').textContent = (+this.value).toFixed(2)">
+          <span class="val-badge" id="bgmVolVal">1.00</span>
+        </div>
+
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button onclick="BGM.duck(0.15, 2000); log('duck 15% for 2s','info')">🦆 Duck 2s</button>
+          <button onclick="BGM.duck(0.0, 500);  log('duck 0% for 500ms','info')">🔇 Full Duck</button>
+          <button onclick="BGM.duck(1, 0);       log('duck restore','ok')">🔊 Restore</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Play opts -->
+    <div class="panel">
+      <div class="panel-header">SFX Play Options</div>
+      <div class="panel-body">
+        <div class="ctrl-row">
+          <label>Volume</label>
+          <input type="range" id="optVol" min="0" max="2" step="0.01" value="1"
+            oninput="document.getElementById('optVolVal').textContent = (+this.value).toFixed(2)">
+          <span class="val-badge" id="optVolVal">1.00</span>
+        </div>
+        <div class="ctrl-row">
+          <label>Pitch</label>
+          <input type="range" id="optPitch" min="0.2" max="3" step="0.01" value="1"
+            oninput="document.getElementById('optPitchVal').textContent = (+this.value).toFixed(2)">
+          <span class="val-badge" id="optPitchVal">1.00</span>
+        </div>
+        <div class="ctrl-row">
+          <label>Pan</label>
+          <input type="range" id="optPan" min="-1" max="1" step="0.01" value="0"
+            oninput="document.getElementById('optPanVal').textContent = (+this.value).toFixed(2)">
+          <span class="val-badge" id="optPanVal">0.00</span>
+        </div>
+        <div style="margin-top:6px;color:#6e7681;font-size:11px">
+          Applied to next SFX play click.
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Right main ─────────────────────────────── -->
+  <div style="display:flex;flex-direction:column;gap:12px">
+
+    <!-- SFX buttons -->
+    <div class="panel">
+      <div class="panel-header">Sound Effects — click to play (● green=loaded, ● red=error/silent)</div>
+      <div class="panel-body" id="sfxContainer"></div>
+    </div>
+
+    <!-- Log -->
+    <div class="panel">
+      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Console Log</span>
+        <button style="padding:2px 8px;font-size:10px" onclick="document.getElementById('log').innerHTML=''">Clear</button>
+      </div>
+      <div class="panel-body" style="padding:0">
+        <div id="log"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="statusBar">
+  AudioContext: <span id="stCtx">—</span> &nbsp;|&nbsp;
+  Loaded: <span id="stLoaded">0</span> / <span id="stTotal">0</span> &nbsp;|&nbsp;
+  BGM: <span id="stBGM">—</span>
+</div>
+
+<!-- ── Scripts ──────────────────────────────────────────────── -->
+<script src="sfx_manifest.js"></script>
+<script src="sfx_manager.js"></script>
+<script src="bgm_manager.js"></script>
+
+<script>
+// ─── Logging ──────────────────────────────────────────────────
+function log(msg, type = 'info') {
+  const el = document.getElementById('log');
+  const now = new Date();
+  const ts = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}.${now.getMilliseconds().toString().padStart(3,'0')}`;
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-time">[${ts}]</span> <span class="log-${type}">${msg}</span>`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+// Patch console.warn to show in log too
+const _warn = console.warn.bind(console);
+console.warn = (...args) => { log(args.join(' '), 'warn'); _warn(...args); };
+
+// ─── SFX section definitions ───────────────────────────────────
+const SFX_SECTIONS = [
+  {
+    title: 'Player',
+    keys: ['player_hit','player_dash','player_parry','player_parry_perfect','player_block',
+           'player_atk1','player_atk2','player_atk3','player_holy_charge','player_twin_moon',
+           'player_sanctuary','player_ult_activate','player_death']
+  },
+  {
+    title: 'Boss',
+    keys: ['boss_hit','boss_dead','boss_phase_transit','boss_telegraph']
+  },
+  {
+    title: 'Lucia',
+    keys: ['lucia_atk_a','lucia_atk_b','lucia_atk_c','lucia_charge','lucia_ult',
+           'lucia_pillar','lucia_ring_summon','lucia_clone_spawn','lucia_clone_despawn']
+  },
+  {
+    title: 'UI',
+    keys: ['ui_click','ui_hover','ui_open','ui_close']
+  },
+  {
+    title: 'Pickups',
+    keys: ['heart_pickup','mana_pickup']
+  },
+];
+
+const BGM_KEYS = ['bgm_title','bgm_exploration','bgm_boss_phase1','bgm_boss_phase2','bgm_victory'];
+
+// ─── Build SFX buttons ─────────────────────────────────────────
+const container = document.getElementById('sfxContainer');
+
+SFX_SECTIONS.forEach(sec => {
+  const wrap = document.createElement('div');
+  wrap.className = 'sfx-section';
+
+  const title = document.createElement('div');
+  title.className = 'sfx-section-title';
+  title.textContent = sec.title;
+  wrap.appendChild(title);
+
+  const grid = document.createElement('div');
+  grid.className = 'sfx-grid';
+
+  sec.keys.forEach(key => {
+    const btn = document.createElement('button');
+    btn.id = `sfxbtn_${key}`;
+    btn.className = 'sfx-btn';
+    btn.textContent = key;
+    btn.title = `SFX.play("${key}")`;
+    btn.addEventListener('click', () => playSFX(key));
+    grid.appendChild(btn);
+  });
+
+  wrap.appendChild(grid);
+  container.appendChild(wrap);
+});
+
+// ─── Build BGM buttons ─────────────────────────────────────────
+const bgmContainer = document.getElementById('bgmBtns');
+BGM_KEYS.forEach(key => {
+  const btn = document.createElement('button');
+  btn.id = `bgmbtn_${key}`;
+  btn.className = 'success';
+  btn.textContent = key.replace('bgm_', '');
+  btn.title = `BGM.play("${key}", 800)`;
+  btn.addEventListener('click', () => playBGM(key));
+  bgmContainer.appendChild(btn);
+});
+
+// ─── Actions ──────────────────────────────────────────────────
+function getOpts() {
+  return {
+    volume: +document.getElementById('optVol').value,
+    pitch:  +document.getElementById('optPitch').value,
+    pan:    +document.getElementById('optPan').value,
+  };
+}
+
+function playSFX(key) {
+  const opts = getOpts();
+  const result = SFX.play(key, opts);
+  const detail = `vol=${opts.volume.toFixed(2)} pitch=${opts.pitch.toFixed(2)} pan=${opts.pan.toFixed(2)}`;
+  if (result === null) {
+    log(`SFX.play("${key}") → throttled or not loaded [${detail}]`, 'warn');
+  } else {
+    log(`SFX.play("${key}") ✓  [${detail}]`, 'ok');
+  }
+  updateStatus();
+}
+
+async function playBGM(key) {
+  log(`BGM.play("${key}", 800ms fade)…`, 'info');
+  await BGM.play(key, 800, true);
+  log(`BGM playing: ${key}`, 'ok');
+  updateStatus();
+}
+
+async function doInit() {
+  SFX.init();
+  log('SFX.init() – AudioContext created/resumed', 'ok');
+  document.getElementById('btnInit').classList.add('loading');
+  document.getElementById('btnInit').textContent = '✓ Initialised';
+  updateStatus();
+}
+
+async function doPreloadAll() {
+  const allKeys = SFX_SECTIONS.flatMap(s => s.keys);
+  const btn = document.getElementById('btnPreloadAll');
+  btn.textContent = '⬇ Loading…';
+  btn.classList.add('loading');
+  log(`Preloading ${allKeys.length} SFX keys…`, 'info');
+
+  await SFX.preload(allKeys);
+
+  allKeys.forEach(key => updateBtnStatus(key));
+  btn.textContent = '✓ All SFX Loaded';
+  log(`Preload complete. Loaded: ${allKeys.filter(k => SFX.isLoaded(k)).length}/${allKeys.length}`, 'ok');
+  updateStatus();
+}
+
+async function doPreloadBGM() {
+  log(`Loading BGM manifests (${BGM_KEYS.length} keys)…`, 'info');
+  // BGM loads on demand in bgm_manager; here we just preload via SFX for status dots
+  await SFX.preload(BGM_KEYS);
+  BGM_KEYS.forEach(key => updateBtnStatus(key, 'bgm'));
+  log('BGM keys pre-fetched into SFX buffer cache.', 'ok');
+  updateStatus();
+}
+
+function updateBtnStatus(key, prefix = 'sfx') {
+  const btn = document.getElementById(`${prefix}btn_${key}`);
+  if (!btn) return;
+  if (SFX.isLoaded(key)) {
+    // Loaded – but was it silent (error)?  Check buffer duration > 0.
+    const ctxInternal = SFX._ctx;
+    btn.classList.add('loaded');
+  }
+}
+
+function updateStatus() {
+  const ctxState = SFX._ctx ? SFX._ctx.state : 'none';
+  document.getElementById('stCtx').textContent = ctxState;
+
+  const allKeys = [...SFX_SECTIONS.flatMap(s => s.keys), ...BGM_KEYS];
+  const loaded = allKeys.filter(k => SFX.isLoaded(k)).length;
+  document.getElementById('stLoaded').textContent = loaded;
+  document.getElementById('stTotal').textContent = allKeys.length;
+  document.getElementById('stBGM').textContent = BGM.currentKey || '—';
+}
+
+// ─── Keyboard shortcuts ────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { BGM.stop(400); log('ESC → BGM.stop(400ms)', 'warn'); }
+  if (e.key === 'd')      { BGM.duck(0.15, 2000); log('D → duck(15%, 2s)', 'info'); }
+  updateStatus();
+});
+
+// ─── Status poll ──────────────────────────────────────────────
+setInterval(updateStatus, 1000);
+
+log('Test console ready. Click "Init AudioContext" first (browser autoplay policy).', 'info');
+log('Keyboard: [ESC] stop BGM  [D] duck BGM', 'info');
+</script>
+</body>
+</html>
