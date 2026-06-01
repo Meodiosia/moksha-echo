@@ -1,4 +1,1 @@
-role2_src.js filter=lfs diff=lfs merge=lfs -text
 *.gif filter=lfs diff=lfs merge=lfs -text
-bundle.html filter=lfs diff=lfs merge=lfs -text
-knight_src.js filter=lfs diff=lfs merge=lfs -text
