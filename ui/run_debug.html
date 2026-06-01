@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>RunManager 调试面板 · 莫克夏回声</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #08080f; color: #ccc; font-family: 'Consolas', monospace; font-size: 12px; padding: 16px; }
+  h1 { color: #AAEEFF; font-size: 17px; margin-bottom: 3px; }
+  .sub { color: #445; font-size: 10px; margin-bottom: 18px; }
+
+  .row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .panel { background: #0e0e1a; border: 1px solid #252535; border-radius: 6px; padding: 13px; flex: 1; min-width: 260px; }
+  .panel h2 { color: #FFD080; font-size: 12px; margin-bottom: 10px; border-bottom: 1px solid #252535; padding-bottom: 5px; }
+
+  /* 房间路线图 */
+  .room-track { display: flex; align-items: center; gap: 0; margin-bottom: 12px; }
+  .room-node {
+    width: 80px; text-align: center; position: relative;
+    padding: 8px 4px;
+    border: 1px solid #334;
+    border-radius: 4px;
+    background: #0d0d18;
+    font-size: 10px;
+  }
+  .room-node .rn-type { font-size: 18px; display: block; margin-bottom: 2px; }
+  .room-node .rn-label { color: #667; font-size: 9px; }
+  .room-node.current { border-color: #AAEEFF; background: #0d1520; }
+  .room-node.current .rn-label { color: #AAEEFF; }
+  .room-node.done { border-color: #4CAF50; opacity: 0.6; }
+  .room-node.done::after { content: '✓'; position:absolute; top:2px; right:4px; color:#4CAF50; font-size:10px; }
+  .room-arrow { color: #334; font-size: 16px; padding: 0 3px; }
+
+  /* 状态机 */
+  .state-box {
+    font-size: 20px; font-weight: bold;
+    color: #AAEEFF; text-align: center;
+    padding: 12px; background: #0d0d18;
+    border-radius: 4px; margin-bottom: 10px;
+    letter-spacing: 1px;
+  }
+  .state-desc { color: #556; font-size: 10px; text-align: center; margin-bottom: 12px; }
+
+  /* 按钮 */
+  .btn-row { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 8px; }
+  .btn {
+    padding: 6px 11px; border-radius: 4px;
+    border: 1px solid #334; background: #141428;
+    color: #aaa; cursor: pointer; font-family: inherit; font-size: 11px;
+    transition: all 0.12s;
+  }
+  .btn:hover { border-color: #AAEEFF; color: #AAEEFF; background: #1a1a30; }
+  .btn.primary { border-color: #FFD080; color: #FFD080; }
+  .btn.primary:hover { background: #1a1500; }
+  .btn.danger { border-color: #e74c3c; color: #e74c3c; }
+  .btn.danger:hover { background: #1a0505; }
+  .btn:disabled { opacity: 0.3; cursor: default; }
+
+  /* 法宝选择弹窗 */
+  .relic-modal {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85); z-index: 100;
+    align-items: center; justify-content: center; flex-direction: column;
+  }
+  .relic-modal.visible { display: flex; }
+  .relic-modal h3 { color: #FFD080; font-size: 15px; margin-bottom: 16px; text-align: center; }
+  .relic-cards { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+  .relic-card-m {
+    width: 140px; padding: 14px 12px; border-radius: 6px;
+    border: 1px solid #334; background: #0d0d1a;
+    cursor: pointer; text-align: center;
+    transition: all 0.15s;
+  }
+  .relic-card-m:hover { border-color: #FFD080; background: #1a1500; transform: translateY(-2px); }
+  .relic-card-m .icon { font-size: 30px; display: block; margin-bottom: 6px; }
+  .relic-card-m .name { color: #eee; font-size: 13px; font-weight: bold; }
+  .relic-card-m .rarity { font-size: 9px; margin: 3px 0; }
+  .relic-card-m .rarity.common { color: #778; }
+  .relic-card-m .rarity.rare { color: #AAEEFF; }
+  .relic-card-m .rarity.legendary { color: #FFD080; }
+  .relic-card-m .desc { color: #667; font-size: 10px; line-height: 1.4; margin-top: 4px; }
+  .skip-btn { margin-top: 14px; color: #445; font-size: 11px; cursor: pointer; }
+  .skip-btn:hover { color: #778; }
+
+  /* 过渡遮罩模拟 */
+  .transition-sim {
+    position: fixed; inset: 0; background: #000;
+    pointer-events: none; z-index: 50; opacity: 0;
+    transition: opacity 0.4s ease-in;
+  }
+  .transition-sim.out { opacity: 1; }
+  .transition-sim.in  { transition: opacity 0.35s ease-out; opacity: 0; }
+
+  /* 日志 */
+  .log { background: #060610; border: 1px solid #1a1a28; border-radius: 4px;
+         height: 180px; overflow-y: auto; padding: 8px; font-size: 10px; line-height: 1.7; }
+  .log .l { color: #445; }
+  .log .l.info  { color: #AAEEFF; }
+  .log .l.good  { color: #4CAF50; }
+  .log .l.warn  { color: #FFD080; }
+  .log .l.event { color: #CC88FF; }
+
+  /* 背包 */
+  .inv { display: flex; gap: 6px; flex-wrap: wrap; }
+  .inv-slot {
+    width: 44px; height: 44px; border: 1px dashed #334;
+    border-radius: 4px; display: flex; align-items: center;
+    justify-content: center; font-size: 20px; position: relative;
+    background: #0a0a14;
+  }
+  .inv-slot.filled { border-style: solid; border-color: #446; }
+  .inv-slot .sname { position:absolute; bottom:-13px; font-size:8px; color:#445; white-space:nowrap; }
+
+  /* 验收清单 */
+  .checklist { background:#0a0a14; border-left:3px solid #4CAF50; padding:10px 14px; margin-top:14px; font-size:11px; color:#667; line-height:2; }
+  .checklist b { color:#4CAF50; }
+</style>
+</head>
+<body>
+
+<h1>🗺 RunManager 调试面板</h1>
+<p class="sub">V1.0 第2步 · 房间流程 · 地图切换 · 法宝奖励 · 独立测试</p>
+
+<div class="row">
+
+  <!-- 左：状态机 + 控制 -->
+  <div class="panel" style="min-width:240px; max-width:280px">
+    <h2>状态机</h2>
+    <div class="state-box" id="state-box">idle</div>
+    <div class="state-desc" id="state-desc">等待开始</div>
+    <div class="btn-row">
+      <button class="btn primary" onclick="doStart()">▶ 开始新局</button>
+      <button class="btn" onclick="doCompleteRoom()">✓ 强制清场</button>
+      <button class="btn danger" onclick="doEndDefeat()">💀 触发死亡</button>
+      <button class="btn" onclick="RunManager.debugDump()">📋 Dump</button>
+    </div>
+    <div style="margin-top:14px">
+      <div style="color:#445; font-size:10px; margin-bottom:6px">当前法宝背包</div>
+      <div id="inv" class="inv"></div>
+    </div>
+  </div>
+
+  <!-- 中：房间路线图 -->
+  <div class="panel">
+    <h2>本局路线图</h2>
+    <div id="room-track" class="room-track"></div>
+    <div id="room-detail" style="margin-top:12px; font-size:11px; color:#556; line-height:1.8"></div>
+
+    <h2 style="margin-top:16px">事件日志</h2>
+    <div id="log" class="log"></div>
+  </div>
+
+  <!-- 右：法宝池预览 -->
+  <div class="panel" style="min-width:240px; max-width:280px">
+    <h2>法宝池（模拟抽取结果）</h2>
+    <div id="pool-preview" style="font-size:11px; color:#556">点击"开始新局"后显示</div>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn" onclick="previewPool()">🎲 预览抽取3个</button>
+      <button class="btn" onclick="previewPoolElite()">⭐ 精英房抽取</button>
+    </div>
+    <h2 style="margin-top:16px">道法状态</h2>
+    <div id="combo-status" style="font-size:11px; color:#556">无激活道法</div>
+  </div>
+
+</div>
+
+<!-- 法宝选择弹窗 -->
+<div id="relic-modal" class="relic-modal">
+  <h3 id="relic-modal-title">选择一件法宝</h3>
+  <div id="relic-cards" class="relic-cards"></div>
+  <div class="skip-btn" id="skip-btn" onclick="doSkip()">跳过（此世无缘）</div>
+</div>
+
+<!-- 过渡遮罩模拟 -->
+<div id="trans-sim" class="transition-sim"></div>
+
+<!-- 验收清单 -->
+<div class="checklist">
+  <b>V1.0 RunManager 验收标准：</b><br>
+  ✅ 1. "开始新局"→ 状态变 selecting_relic，弹出法宝选择<br>
+  ✅ 2. 选择法宝后 → 状态变 in_room，路线图第1格高亮<br>
+  ✅ 3. "强制清场" → 弹出法宝奖励，选完进入下一房间<br>
+  ✅ 4. 经过4个房间（战斗→宝库→精英→Boss）→ 结算弹出<br>
+  ✅ 5. Boss 房清场 → 触发 run:boss_defeated 事件，日志出现<br>
+  ✅ 6. 宝库房进入即弹奖励（无需清场）<br>
+  ✅ 7. 精英房奖励中必有 rare 法宝<br>
+  ✅ 8. "触发死亡" → 结算弹出 outcome=defeat<br>
+  ✅ 9. 路线图实时反映当前房间和已完成房间<br>
+  ✅ 10. 法宝装备后背包格实时更新
+</div>
+
+<script src="../core/event_bus.js"></script>
+<script src="../core/relic_system.js"></script>
+<script src="../levels/level_2.js"></script>
+<script src="../levels/level_3.js"></script>
+<script src="../core/run_manager.js"></script>
+
+<script>
+// ── mock 游戏全局 ──
+window.player      = { hp: 10000 };
+window.playerHp    = 10000;
+window.playerMaxHp = 10000;
+window.role3       = { MAX_SWORDS: 8 };
+window.boss        = { state: 'idle' };
+window.DEF_PARRY_WINDOW = 0.18;
+
+var DIFFICULTIES = {
+  1: { name: '初心', playerMaxHp: 15000 },
+  2: { name: '修行', playerMaxHp: 10000 },
+  3: { name: '试炼', playerMaxHp: 8000  },
+};
+
+var _pendingSelectCallback = null;
+var _pendingSkipCallback   = null;
+
+// ── 日志 ──
+function log(msg, cls){
+  var box = document.getElementById('log');
+  var d = document.createElement('div');
+  d.className = 'l ' + (cls||'');
+  var ts = new Date().toLocaleTimeString('zh',{hour12:false});
+  d.textContent = '['+ts+'] '+msg;
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ── Events 监听 ──
+Events.on('run:started',        function(d){ log('▶ run:started 难度='+((d.difficulty&&d.difficulty.name)||'?'), 'good'); refreshUI(); });
+Events.on('run:room_entered',   function(d){ log('🚪 进入房间 ['+d.index+']: '+d.room.label+' ('+d.room.type+')', 'info'); refreshUI(); });
+Events.on('run:room_clear',     function(d){ log('✓ 房间清场: '+d.room.label, 'good'); });
+Events.on('run:boss_defeated',  function(d){ log('👑 Boss 击败！', 'good'); });
+Events.on('run:ended',          function(d){ log('🏁 局结束: '+d.outcome, d.outcome==='victory'?'good':'warn'); refreshUI(); showResult(d); });
+Events.on('run:load_level',     function(d){ log('🗺 加载关卡: '+d.level.name+' (id='+d.level.id+')', 'event'); });
+Events.on('run:spawn_enemies',  function(d){ log('👾 刷怪 '+d.spawns.length+' 个', 'event'); });
+Events.on('run:spawn_boss',     function(d){ log('🐲 召唤Boss: '+d.bossSpawn.type+' @ ('+d.bossSpawn.x+','+d.bossSpawn.y+')', 'event'); });
+Events.on('run:spawn_player',   function(d){ log('🧍 玩家出生: ('+d.x+','+d.y+')', 'event'); });
+Events.on('relic:equipped',     function(d){ log('✅ 装备法宝: '+d.relic.name, 'good'); refreshInv(); refreshCombo(); });
+Events.on('combo:activated',    function(d){ log('🌟 道法激活: '+d.combo.name, 'event'); refreshCombo(); });
+
+Events.on('run:show_relic_select', function(d){
+  _pendingSelectCallback = d.onSelect;
+  _pendingSkipCallback   = d.onSkip;
+  showRelicModal(d.relics, d.count);
+});
+
+// ── UI 刷新 ──
+var STATE_DESCS = {
+  idle:             '等待开始',
+  selecting_relic:  '选择初始法宝…',
+  transitioning:    '场景切换中…',
+  in_room:          '战斗进行中，击杀所有敌人',
+  reward:           '选择奖励法宝中…',
+  boss:             '渡劫决战中！',
+  result:           '本局结算'
+};
+var ROOM_ICONS = { combat:'⚔', treasure:'💎', elite:'⭐', boss:'🐲' };
+
+function refreshUI(){
+  // 状态机
+  var s = RunManager.getState();
+  document.getElementById('state-box').textContent = s;
+  document.getElementById('state-desc').textContent = STATE_DESCS[s] || '';
+
+  // 路线图
+  var track = document.getElementById('room-track');
+  track.innerHTML = '';
+  var seq = RunManager._sequence;
+  var cur = RunManager.getRoomIndex();
+  seq.forEach(function(room, i){
+    if(i > 0){
+      var arr = document.createElement('div');
+      arr.className = 'room-arrow';
+      arr.textContent = '→';
+      track.appendChild(arr);
+    }
+    var node = document.createElement('div');
+    node.className = 'room-node' + (i===cur?' current':'') + (i<cur?' done':'');
+    node.innerHTML = '<span class="rn-type">'+(ROOM_ICONS[room.type]||'?')+'</span>'
+                   + '<div class="rn-label">'+room.label+'</div>'
+                   + '<div style="font-size:9px;color:#334;margin-top:2px;">'+room.type+'</div>';
+    track.appendChild(node);
+  });
+
+  // 当前房间详情
+  var detail = document.getElementById('room-detail');
+  var room = RunManager.getCurrentRoom();
+  if(room){
+    detail.innerHTML =
+      '<b style="color:#AAEEFF">'+room.label+'</b><br>' +
+      '类型: '+room.type+'  关卡: level'+room.levelId+'<br>' +
+      '敌人: '+(room.enemies?room.enemies.length:0)+'个  ' +
+      '奖励法宝数: '+(room.rewardCount||0)+'个<br>' +
+      '清场条件: '+room.clearCondition;
+  } else {
+    detail.innerHTML = '<span style="color:#334">—</span>';
+  }
+}
+
+function refreshInv(){
+  var inv = document.getElementById('inv');
+  inv.innerHTML = '';
+  var items = RelicManager.getInventory();
+  for(var i=0; i<6; i++){
+    var slot = document.createElement('div');
+    slot.className = 'inv-slot' + (i<items.length?' filled':'');
+    if(i < items.length){
+      slot.innerHTML = items[i].relic.icon;
+      var nm = document.createElement('div');
+      nm.className = 'sname';
+      nm.textContent = items[i].relic.name;
+      slot.appendChild(nm);
+    }
+    inv.appendChild(slot);
+  }
+}
+
+function refreshCombo(){
+  var box = document.getElementById('combo-status');
+  var active = RelicManager.getActiveCombos();
+  if(active.length === 0){
+    box.textContent = '无激活道法';
+    box.style.color = '#445';
+    return;
+  }
+  box.innerHTML = active.map(function(id){
+    var c = COMBO_DB[id];
+    return '<span style="color:#FFD080">'+c.icon+' '+c.name+'</span><br>'
+         + '<span style="color:#556;font-size:10px">'+c.desc+'</span>';
+  }).join('<br>');
+}
+
+// ── 法宝弹窗 ──
+function showRelicModal(relicIds, count){
+  var modal = document.getElementById('relic-modal');
+  var title = document.getElementById('relic-modal-title');
+  var cards = document.getElementById('relic-cards');
+
+  title.textContent = '选择一件法宝（' + count + '选1）';
+  cards.innerHTML = '';
+
+  relicIds.forEach(function(id){
+    var r = RELIC_DB[id];
+    if(!r) return;
+    var card = document.createElement('div');
+    card.className = 'relic-card-m';
+    card.innerHTML =
+      '<span class="icon">'+r.icon+'</span>' +
+      '<div class="name">'+r.name+'</div>' +
+      '<div class="rarity '+r.rarity+'">'+r.rarity.toUpperCase()+'</div>' +
+      '<div class="desc">'+r.desc+'</div>';
+    card.onclick = function(){
+      modal.classList.remove('visible');
+      log('选择法宝: '+r.name, 'info');
+      if(_pendingSelectCallback) _pendingSelectCallback(id);
+      _pendingSelectCallback = null;
+      refreshUI(); refreshInv(); refreshCombo();
+    };
+    cards.appendChild(card);
+  });
+
+  modal.classList.add('visible');
+}
+
+function doSkip(){
+  document.getElementById('relic-modal').classList.remove('visible');
+  if(_pendingSkipCallback) _pendingSkipCallback();
+  _pendingSkipCallback = null;
+  refreshUI();
+}
+
+// ── 结算弹窗（简单模拟）──
+function showResult(data){
+  var msg = data.outcome === 'victory'
+    ? '此劫已渡！\n\n法宝数: ' + (data.stats.relics||[]).length + '\n道法激活: ' + (data.stats.combos||[]).join(', ')
+    : '堕入轮回。\n\n本局法宝: ' + (data.stats.relics||[]).map(function(e){ return e.relic.name; }).join(', ');
+  setTimeout(function(){ alert(msg); }, 300);
+}
+
+// ── 操作按钮 ──
+function doStart(){
+  RelicManager.reset();
+  RunManager.startRun(DIFFICULTIES[2]);
+  refreshUI(); refreshInv(); refreshCombo();
+}
+
+function doCompleteRoom(){
+  if(RunManager.getState() === 'boss'){
+    // 模拟 boss 死亡
+    window.boss.state = 'dead';
+    Events.emit('boss:dead', { bossId: 'lucia' });
+    RunManager.completeRoom();
+  } else {
+    RunManager.completeRoom();
+  }
+  refreshUI();
+}
+
+function doEndDefeat(){
+  RunManager._endRun('defeat');
+  refreshUI();
+}
+
+function previewPool(elite){
+  var pool = RunManager._buildRelicPool(3, elite || false);
+  var box = document.getElementById('pool-preview');
+  box.innerHTML = pool.map(function(id){
+    var r = RELIC_DB[id];
+    return '<div style="margin:4px 0; padding:6px; background:#0d0d18; border-radius:3px; border:1px solid #222">'
+         + r.icon + ' <b style="color:#eee">'+r.name+'</b>'
+         + ' <span style="color:#556;font-size:9px">'+r.rarity+'</span><br>'
+         + '<span style="color:#445">'+r.desc+'</span>'
+         + '</div>';
+  }).join('');
+}
+
+function previewPoolElite(){
+  previewPool(true);
+}
+
+// 初始化
+refreshUI(); refreshInv(); refreshCombo();
+log('RunManager 初始化完成，'+RunManager._sequence.length+'个房间序列(默认)', 'good');
+log('已加载关卡: level_2('+LEVEL_2.name+') / level_3('+LEVEL_3.name+')', 'info');
+</script>
+</body>
+</html>

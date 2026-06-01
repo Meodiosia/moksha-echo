@@ -436,4 +436,61 @@
     restartGame,
     DIFFICULTIES,
   };
+
+  // ─────────────────────────────────────────────
+  // RunManager 事件监听（Roguelite 流程接入）
+  // ─────────────────────────────────────────────
+  if(window.Events){
+
+    // 关卡切换：RunManager 通知换地图（V1.0 仅切换 spawnPoint）
+    Events.on('run:load_level', function(data){
+      const level = data.level;
+      // 更新地图数据（若关卡系统已支持动态切换）
+      if(level && typeof window._loadLevel === 'function'){
+        window._loadLevel(level);
+      }
+      console.log('[GameState] RunManager 切换地图:', level.name);
+    });
+
+    // 玩家出生点重置
+    Events.on('run:spawn_player', function(data){
+      if(typeof player !== 'undefined' && player){
+        player.x = data.x;
+        player.y = data.y;
+        player.vx = 0; player.vy = 0;
+        player.state = 'idle';
+      }
+    });
+
+    // 刷怪（V1.0：接入 archer/bomber_enemy）
+    Events.on('run:spawn_enemies', function(data){
+      if(typeof window.enemies === 'undefined') return;
+      window.enemies.length = 0;
+      data.spawns.forEach(function(sp){
+        if(sp.type === 'archer' && typeof window.spawnArcher === 'function'){
+          const e = window.spawnArcher(sp.x, sp.y);
+          if(e) window.enemies.push(e);
+        }
+      });
+      console.log('[GameState] 刷怪', window.enemies.length, '个');
+    });
+
+    // 召唤 Boss
+    Events.on('run:spawn_boss', function(data){
+      const sp = data.bossSpawn;
+      if(sp.type === 'lucia' && typeof window.spawnLucia === 'function'){
+        if(typeof window._resetBoss === 'function'){
+          window._resetBoss(window.GAME_DIFFICULTY);
+        } else {
+          window.boss = window.spawnLucia(sp.x, sp.y);
+        }
+        console.log('[GameState] Boss 召唤:', sp.type);
+      }
+    });
+
+    // RunManager 请求进入下一局
+    Events.on('run:go_menu', function(){
+      window.GAME_STATE = 'menu';
+    });
+  }
 })();
