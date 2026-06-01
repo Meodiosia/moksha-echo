@@ -371,17 +371,20 @@
       player.state = 'idle';
       player.stateTimer = 0;
       player.vx = 0; player.vy = 0;
-      if(typeof LEVEL_3 !== 'undefined' && LEVEL_3.playerSpawn){
-        player.x = LEVEL_3.playerSpawn.x;
-        player.y = LEVEL_3.playerSpawn.y;
-      } else if(typeof LEVEL_3 !== 'undefined' && LEVEL_3.spawnPoint){
-        player.x = LEVEL_3.spawnPoint.x;
-        player.y = LEVEL_3.spawnPoint.y;
+      // RunManager 模式：出生点由 run:spawn_player 事件驱动，不在此设置
+      if(!window.RunManager){
+        if(typeof LEVEL_3 !== 'undefined' && LEVEL_3.playerSpawn){
+          player.x = LEVEL_3.playerSpawn.x;
+          player.y = LEVEL_3.playerSpawn.y;
+        } else if(typeof LEVEL_3 !== 'undefined' && LEVEL_3.spawnPoint){
+          player.x = LEVEL_3.spawnPoint.x;
+          player.y = LEVEL_3.spawnPoint.y;
+        }
       }
     }
 
-    // ── BOSS 重置（通过桥接函数修改 let boss）──
-    if(typeof window._resetBoss === 'function'){
+    // ── BOSS 重置：RunManager 模式由 run:spawn_boss 事件驱动，不在此 spawn ──
+    if(!window.RunManager && typeof window._resetBoss === 'function'){
       window._resetBoss(d);
     }
 
@@ -395,7 +398,7 @@
       window.role3.chargingO = 0;
       window.role3.chargingL = 0;
       window.role3.sanctuaryT = 0;
-      window._r3InitDone = false;  // 重置被动剑初始化标记
+      window._r3InitDone = false;
       window._r3PassiveAcc = 0;
     }
 
