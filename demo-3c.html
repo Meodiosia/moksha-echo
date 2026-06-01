@@ -827,23 +827,32 @@ function initMapImage(onReady){
   const mc = mapCanvas.getContext('2d');
   mc.imageSmoothingEnabled = false;
 
-  // 关卡选择：默认 level_3（新地图），?level=2 切换旧关卡
+  // 关卡选择：RunManager 模式默认 level_2；旧流程 level_3；?level=2 强制切 2
   const _lvParam = (new URLSearchParams(location.search)).get('level');
-  if(_lvParam === '2' && typeof LEVEL2_MASK !== 'undefined'){
-    window._activeGroundMask  = LEVEL2_MASK;
-    window._activeGroundMaskW = LEVEL2_MASK_W;
-    window._activeGroundMaskH = LEVEL2_MASK_H;
-    window._activeGroundUrl   = 'ground2_clean.png';
-    console.log('[level] 切换到关卡 2');
+  if(_lvParam === '2' || (!window.LUCIA_START_PHASE && typeof LEVEL_2 !== 'undefined')){
+    // level_2 地图
+    if(typeof LEVEL2_MASK !== 'undefined'){
+      window._activeGroundMask  = LEVEL2_MASK;
+      window._activeGroundMaskW = LEVEL2_MASK_W;
+      window._activeGroundMaskH = LEVEL2_MASK_H;
+    }
+    window._activeGroundUrl = 'ground2_clean.png';
+    // level_2 用 mapData 覆盖碰撞
+    if(typeof LEVEL_2 !== 'undefined' && LEVEL_2.mapData){
+      window._pendingMapData    = LEVEL_2.mapData;
+      window._pendingMapLevel   = LEVEL_2;
+    }
     if(typeof LEVEL_2 !== 'undefined' && LEVEL_2.spawnPoint){
       player.x = LEVEL_2.spawnPoint.x;
       player.y = LEVEL_2.spawnPoint.y;
     }
+    console.log('[level] 关卡 2 — 熔火回廊（小怪房）');
   } else if(typeof LEVEL_3 !== 'undefined'){
     // 关卡 3 默认：把 mapData 写入碰撞表
     window._activeGroundUrl = 'ground3_clean.png';
     // 用 LEVEL_3.mapData 覆盖 map[][]（在 buildMap 之后）
     window._pendingMapData = LEVEL_3.mapData;
+    window._pendingMapLevel = LEVEL_3;
     // 玩家出生点
     player.x = LEVEL_3.spawnPoint.x;
     player.y = LEVEL_3.spawnPoint.y;
@@ -863,15 +872,17 @@ function finishMap(mc, onReady) {
   // ── Step 2: 由 ground alpha 写碰撞（透明=不可走）──
   applyGroundCollision(map, MAP_W, MAP_H);
 
-  // 关卡 3：用 mapData 覆盖碰撞表（比 ground alpha 更精确）
+  // 关卡 mapData 覆盖碰撞表（level_2 或 level_3）
   if(window._pendingMapData){
     const md = window._pendingMapData;
-    const mw = LEVEL_3.mapW, mh = LEVEL_3.mapH;
+    const lv = window._pendingMapLevel || LEVEL_3;
+    const mw = lv.mapW || MAP_W, mh = lv.mapH || MAP_H;
     for(let ty=0;ty<mh&&ty<MAP_H;ty++)
       for(let tx=0;tx<mw&&tx<MAP_W;tx++)
         map[ty][tx] = md[ty][tx];
-    console.log('[map] level3 mapData applied');
+    console.log('[map] mapData applied, level:', lv === (typeof LEVEL_2 !== 'undefined' ? LEVEL_2 : null) ? '2' : '3');
     window._pendingMapData = null;
+    window._pendingMapLevel = null;
   }
 
   // ── Step 2.5: 出生点保护（若落在不可走，找最近可走tile）──
@@ -898,10 +909,10 @@ function finishMap(mc, onReady) {
   player.y = pTy2*TILE + TILE/2;
   console.log('[spawn] player at tile', Math.floor(player.x/TILE), Math.floor(player.y/TILE));
 
-  // ── Step 3: 生成关卡装饰布局（关卡3跳过，避免黑块）──
+  // ── Step 3: 生成关卡装饰布局（level_3 跳过，避免黑块）──
   const playerSpawn = { x: player.x, y: player.y };
   const bossSpawn   = { x: 36*TILE, y: 10*TILE };
-  if(typeof LEVEL_3 === 'undefined'){
+  if(!window._isLevel3){
     levelProps = generateLevelProps(playerSpawn, bossSpawn);
   } else {
     levelProps = [];   // level3 不自动生成装饰
@@ -1532,8 +1543,19 @@ window._loadLevel = function(levelData){
         map[ty][tx] = md[ty][tx];
   }
 
+  // 更新 ground mask（影响 applyGroundCollision / _isWalkable）
+  if(!isL3 && typeof LEVEL2_MASK !== 'undefined'){
+    window._activeGroundMask  = LEVEL2_MASK;
+    window._activeGroundMaskW = LEVEL2_MASK_W;
+    window._activeGroundMaskH = LEVEL2_MASK_H;
+  } else if(isL3 && typeof GROUND_MASK !== 'undefined'){
+    window._activeGroundMask  = GROUND_MASK;
+    window._activeGroundMaskW = GROUND_MASK_W;
+    window._activeGroundMaskH = GROUND_MASK_H;
+  }
+
   // 3. 切换 ground 图 + 重建 mapCanvas
-  const groundUrl = isL3 ? 'ground3_clean.png' : 'ground3_clean.png'; // level_2 暂无独立图，共用
+  const groundUrl = isL3 ? 'ground3_clean.png' : 'ground2_clean.png';
   mapReady = false;
   const mc = mapCanvas ? mapCanvas.getContext('2d') : null;
   if(!mc){ console.warn('[_loadLevel] mapCanvas 未初始化'); mapReady = true; return; }
@@ -5534,18 +5556,23 @@ function loop(ts){
 
 window.BOSS_INVINCIBLE = false;  // 无敌关闭
 // RunManager 接管时：从 level_2 出发，不直接进 boss 房
-// 仅 ?direct=boss 或 !RunManager 时才走旧流程
 const _directBoss = (new URLSearchParams(location.search)).get('direct') === 'boss';
 window.LUCIA_START_PHASE = (_directBoss || typeof window.RunManager === 'undefined') ? 3 : null;
-// 初始地图：RunManager 流程用 level_2，旧流程用 level_3
+// 初始地图
 if(window.LUCIA_START_PHASE){
   window._activeGroundUrl = 'ground3_clean.png';
 } else {
-  // level_2 暂无独立 ground 图，使用 level_3 地图作为起始占位，RunManager 会切换
-  window._activeGroundUrl = 'ground3_clean.png';
+  // RunManager 流程：初始加载 level_2（小怪房）
+  window._activeGroundUrl = 'ground2_clean.png';
+  if(typeof LEVEL2_MASK !== 'undefined'){
+    window._activeGroundMask  = LEVEL2_MASK;
+    window._activeGroundMaskW = LEVEL2_MASK_W;
+    window._activeGroundMaskH = LEVEL2_MASK_H;
+  }
   // 将出生点设为 level_2
   if(typeof LEVEL_2 !== 'undefined' && LEVEL_2.spawnPoint){
-    window._rogueliteSpawn = { x: LEVEL_2.spawnPoint.x, y: LEVEL_2.spawnPoint.y };
+    player.x = LEVEL_2.spawnPoint.x;
+    player.y = LEVEL_2.spawnPoint.y;
   }
 }
 buildMap();
@@ -5556,8 +5583,8 @@ window.addEventListener('load', () => {
     console.log('[AI] 玩家 AI 默认关闭，按 Tab 或左上按钮开启');
   }
 });
-// level3：禁用fog/ambient/detail覆盖层（避免黑块）
-const _isLevel3 = typeof LEVEL_3 !== 'undefined';
+// 是否是 level3（boss 房）：旧流程始终是，RunManager 流程初始 level_2
+const _isLevel3 = window.LUCIA_START_PHASE ? (typeof LEVEL_3 !== 'undefined') : false;
 window._isLevel3 = _isLevel3;
 if(!_isLevel3) initAmbientLights();
 if(!_isLevel3) initFogLayers();
