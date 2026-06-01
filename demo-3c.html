@@ -830,14 +830,15 @@ function initMapImage(onReady){
   // 关卡选择：RunManager 模式默认 level_2；旧流程 level_3；?level=2 强制切 2
   const _lvParam = (new URLSearchParams(location.search)).get('level');
   if(_lvParam === '2' || (!window.LUCIA_START_PHASE && typeof LEVEL_2 !== 'undefined')){
-    // level_2 地图
-    if(typeof LEVEL2_MASK !== 'undefined'){
-      window._activeGroundMask  = LEVEL2_MASK;
-      window._activeGroundMaskW = LEVEL2_MASK_W;
-      window._activeGroundMaskH = LEVEL2_MASK_H;
+    // level_2（小怪房）：用原始 ground_clean.png + GROUND_MASK（熔岩地形）
+    // ground2_clean.png 是废弃迷宫图，不用
+    if(typeof GROUND_MASK !== 'undefined'){
+      window._activeGroundMask  = GROUND_MASK;
+      window._activeGroundMaskW = GROUND_MASK_W;
+      window._activeGroundMaskH = GROUND_MASK_H;
     }
-    window._activeGroundUrl = 'ground2_clean.png';
-    // level_2 用 mapData 覆盖碰撞
+    window._activeGroundUrl = 'ground_combat.png';
+    // level_2 用 mapData 覆盖碰撞（level_2.js 的走廊布局）
     if(typeof LEVEL_2 !== 'undefined' && LEVEL_2.mapData){
       window._pendingMapData    = LEVEL_2.mapData;
       window._pendingMapLevel   = LEVEL_2;
@@ -1544,18 +1545,15 @@ window._loadLevel = function(levelData){
   }
 
   // 更新 ground mask（影响 applyGroundCollision / _isWalkable）
-  if(!isL3 && typeof LEVEL2_MASK !== 'undefined'){
-    window._activeGroundMask  = LEVEL2_MASK;
-    window._activeGroundMaskW = LEVEL2_MASK_W;
-    window._activeGroundMaskH = LEVEL2_MASK_H;
-  } else if(isL3 && typeof GROUND_MASK !== 'undefined'){
+  // level_2 小怪房 和 level_3 boss 房都用同一套 GROUND_MASK（同图集）
+  if(typeof GROUND_MASK !== 'undefined'){
     window._activeGroundMask  = GROUND_MASK;
     window._activeGroundMaskW = GROUND_MASK_W;
     window._activeGroundMaskH = GROUND_MASK_H;
   }
 
   // 3. 切换 ground 图 + 重建 mapCanvas
-  const groundUrl = isL3 ? 'ground3_clean.png' : 'ground2_clean.png';
+  const groundUrl = isL3 ? 'ground3_clean.png' : 'ground_combat.png';
   mapReady = false;
   const mc = mapCanvas ? mapCanvas.getContext('2d') : null;
   if(!mc){ console.warn('[_loadLevel] mapCanvas 未初始化'); mapReady = true; return; }
@@ -5562,12 +5560,12 @@ window.LUCIA_START_PHASE = (_directBoss || typeof window.RunManager === 'undefin
 if(window.LUCIA_START_PHASE){
   window._activeGroundUrl = 'ground3_clean.png';
 } else {
-  // RunManager 流程：初始加载 level_2（小怪房）
-  window._activeGroundUrl = 'ground2_clean.png';
-  if(typeof LEVEL2_MASK !== 'undefined'){
-    window._activeGroundMask  = LEVEL2_MASK;
-    window._activeGroundMaskW = LEVEL2_MASK_W;
-    window._activeGroundMaskH = LEVEL2_MASK_H;
+  // RunManager 流程：初始加载原始熔岩地形（小怪房）
+  window._activeGroundUrl = 'ground_combat.png';
+  if(typeof GROUND_MASK !== 'undefined'){
+    window._activeGroundMask  = GROUND_MASK;
+    window._activeGroundMaskW = GROUND_MASK_W;
+    window._activeGroundMaskH = GROUND_MASK_H;
   }
   // 将出生点设为 level_2
   if(typeof LEVEL_2 !== 'undefined' && LEVEL_2.spawnPoint){
