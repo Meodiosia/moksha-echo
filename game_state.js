@@ -282,7 +282,9 @@
     }
 
     // ── 渡劫印记计算 ──
-    const seals = victory ? 100 : 30;
+    const sealsEarned = victory ? 100 : 30;
+    const totalSeals = (window.Save && window.Save.getMeta) ? window.Save.getMeta().seals : sealsEarned;
+    const totalRuns  = (window.Save && window.Save.getMeta) ? window.Save.getMeta().totalRuns : 1;
     const sealHTML = `
       <div style="
         margin:10px 0;padding:8px 20px;
@@ -291,7 +293,7 @@
         border-radius:5px;font-size:12px;
         color:#FFD080;letter-spacing:2px;
       ">
-        渡劫印记 +${seals}
+        渡劫印记 +${sealsEarned}　·　累计 ${totalSeals}　·　第 ${totalRuns} 劫
       </div>
     `;
 
@@ -582,10 +584,23 @@
       window.GAME_STATE = 'menu';
     });
 
-    // RunManager 局结束 → 显示结算弹窗
+    // RunManager 局结束 → 结算写档 + 显示结算弹窗
     Events.on('run:ended', function(data){
       const victory = data.outcome === 'victory';
       window.GAME_STATE = victory ? 'victory' : 'defeat';
+
+      // 写档
+      if(window.Save && typeof window.Save.recordRun === 'function'){
+        const seals = victory ? 100 : 30;
+        const relicStats = window.RelicManager ? window.RelicManager.getStats() : {};
+        window.Save.recordRun({
+          victory:    victory,
+          sealsEarned: seals,
+          bossKilled:  victory ? 'lucia' : null,
+          relicStats:  relicStats
+        });
+      }
+
       // 延迟 0.5s 弹出（给 Boss 死亡动画缓冲）
       setTimeout(function(){ showResultModal(victory); }, 500);
     });

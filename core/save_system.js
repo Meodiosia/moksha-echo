@@ -3,8 +3,8 @@
 (function (root) {
   'use strict';
 
-  var KEY = 'demo3c_save_v1';
-  var SCHEMA_VERSION = 1;
+  var KEY = 'demo3c_save_v2';   // key 升级避免读到旧格式
+  var SCHEMA_VERSION = 2;
 
   // --- defaults --------------------------------------------------------------
   function makeDefaults() {
@@ -24,15 +24,41 @@
       },
       stats: {
         // free-form counters: e.g. 'parryCount', 'totalDmgDealt', etc.
+      },
+      // ── V2 新增：Roguelite Meta 进度 ──────────────
+      meta: {
+        seals:          0,     // 渡劫印记（局间货币）
+        totalRuns:      0,     // 总局数
+        totalVictories: 0,     // 通关次数
+        totalDeaths:    0,     // 死亡次数
+        tribulation:    0,     // 渡劫层数（热度，每通关+1）
+        bossKills: {
+          lucia: 0             // 各 Boss 击杀次数
+        },
+        unlockedRelics: [],    // 已解锁法宝 id（V2.0 道统商店用）
+        lifetimeStats: {       // 累计统计
+          swordHits:    0,
+          blocks:       0,
+          dashHits:     0,
+          combosTriggered: 0
+        }
       }
     };
   }
 
   // --- migrations ------------------------------------------------------------
-  // Each entry migrates from version N to N+1. Add new fns as schema evolves.
   var MIGRATIONS = {
-    // Example for future:
-    // 1: function (data) { data.newField = 0; return data; },
+    // v1 → v2：添加 meta 字段
+    1: function (data) {
+      data.meta = {
+        seals: 0, totalRuns: 0, totalVictories: 0, totalDeaths: 0,
+        tribulation: 0,
+        bossKills: { lucia: 0 },
+        unlockedRelics: [],
+        lifetimeStats: { swordHits: 0, blocks: 0, dashHits: 0, combosTriggered: 0 }
+      };
+      return data;
+    }
   };
 
   function migrate(data) {
@@ -47,7 +73,6 @@
       v++;
       data._v = v;
     }
-    // Fill any missing top-level keys from defaults (forward-compat).
     return mergeDefaults(makeDefaults(), data);
   }
 
@@ -146,6 +171,61 @@
     save: save,
     patch: patch,
     clear: clear,
-    _migrate: migrate // exposed for tests
+    _migrate: migrate, // exposed for tests
+
+    // ── Meta 便捷 API ──────────────────────────
+    // 读取 meta 字段（始终返回有效对象）
+    getMeta: function(){
+      var d = load();
+      return d.meta || makeDefaults().meta;
+    },
+
+    // 局结束时写入：印记累加 + 统计更新
+    recordRun: function(opts){
+      // opts: { victory, sealsEarned, bossKilled, relicStats }
+      opts = opts || {};
+      var cur = load();
+      var m = cur.meta;
+
+      m.totalRuns      = (m.totalRuns || 0) + 1;
+      m.seals          = (m.seals || 0) + (opts.sealsEarned || 0);
+
+      if(opts.victory){
+        m.totalVictories = (m.totalVictories || 0) + 1;
+        m.tribulation    = (m.tribulation || 0) + 1;
+        if(opts.bossKilled){
+          m.bossKills = m.bossKills || {};
+          m.bossKills[opts.bossKilled] = (m.bossKills[opts.bossKilled] || 0) + 1;
+        }
+      } else {
+        m.totalDeaths  = (m.totalDeaths || 0) + 1;
+        cur.progress.deathCount = (cur.progress.deathCount || 0) + 1;
+      }
+
+      // 累计战斗数据
+      if(opts.relicStats){
+        var ls = m.lifetimeStats = m.lifetimeStats || {};
+        ls.swordHits       = (ls.swordHits       || 0) + (opts.relicStats.relicHits       || 0);
+        ls.blocks          = (ls.blocks           || 0) + (opts.relicStats.blocksTriggered || 0);
+        ls.dashHits        = (ls.dashHits         || 0) + (opts.relicStats.dashHits        || 0);
+        ls.combosTriggered = (ls.combosTriggered  || 0) + (opts.relicStats.combosTrigered  || 0);
+      }
+
+      save(cur);
+      console.log('[Save] 局结算写入 | 印记:', m.seals, '| 总局数:', m.totalRuns,
+                  '| 通关:', m.totalVictories, '| 渡劫层:', m.tribulation);
+      return m;
+    },
+
+    // 解锁新法宝（Meta进度用）
+    unlockRelic: function(id){
+      var cur = load();
+      var arr = cur.meta.unlockedRelics = cur.meta.unlockedRelics || [];
+      if(arr.indexOf(id) < 0){
+        arr.push(id);
+        save(cur);
+        console.log('[Save] 解锁法宝:', id);
+      }
+    }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

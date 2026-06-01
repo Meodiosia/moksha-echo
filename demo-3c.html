@@ -5340,6 +5340,15 @@ function loop(ts){
   // 检测胜负
   if(typeof GameState !== 'undefined') GameState.checkDeath(playerHp);
 
+  // ── Roguelite 清场检测（RunManager）──
+  if(window.RunManager && window.RunManager.isPlaying()){
+    const _bossState = (typeof boss !== 'undefined' && boss) ? boss.state : 'dead';
+    window.RunManager.checkClear(
+      typeof enemies !== 'undefined' ? enemies : [],
+      _bossState
+    );
+  }
+
   // ── 被动：每秒获得一把飞剑（最多 MAX_SWORDS）──
   if(currentChar === 3 && window.role3 && window.role3SwordsAPI){
     // 首次进入：开局给 3 把环绕剑

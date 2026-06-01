@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Save + 清场检测 测试 · 莫克夏回声</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #08080f; color: #ccc; font-family: Consolas, monospace; font-size: 12px; padding: 16px; }
+  h1 { color: #AAEEFF; font-size: 16px; margin-bottom: 3px; }
+  .sub { color: #445; font-size: 10px; margin-bottom: 16px; }
+
+  .row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .panel { background: #0e0e1a; border: 1px solid #252535; border-radius: 5px; padding: 13px; flex: 1; min-width: 260px; }
+  .panel h2 { color: #FFD080; font-size: 12px; margin-bottom: 10px; border-bottom: 1px solid #252535; padding-bottom: 5px; }
+
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+  .meta-item { background: #0a0a14; border-radius: 4px; padding: 8px; }
+  .meta-item .val { font-size: 22px; color: #AAEEFF; font-weight: bold; }
+  .meta-item .key { font-size: 9px; color: #556; margin-top: 2px; }
+
+  .btn-row { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 8px; }
+  .btn { padding: 5px 11px; border-radius: 3px; border: 1px solid #334;
+         background: #141428; color: #aaa; cursor: pointer; font-family: inherit; font-size: 11px; }
+  .btn:hover { border-color: #AAEEFF; color: #AAEEFF; }
+  .btn.gold { border-color: #FFD080; color: #FFD080; }
+  .btn.red  { border-color: #e74c3c; color: #e74c3c; }
+  .btn.green { border-color: #4CAF50; color: #4CAF50; }
+
+  .log { background: #060610; border: 1px solid #1a1a28; border-radius: 4px;
+         height: 200px; overflow-y: auto; padding: 8px; font-size: 10px; line-height: 1.7; }
+  .log .l { color: #445; }
+  .log .l.info  { color: #AAEEFF; }
+  .log .l.good  { color: #4CAF50; }
+  .log .l.warn  { color: #FFD080; }
+  .log .l.error { color: #e74c3c; }
+
+  /* 清场模拟 */
+  .enemy-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .enemy-chip {
+    padding: 4px 10px; border-radius: 12px; font-size: 10px;
+    border: 1px solid #446; background: #0d1a0d; color: #4CAF50; cursor: pointer;
+  }
+  .enemy-chip.dead { border-color: #2a2a2a; background: #0a0a0a; color: #334; text-decoration: line-through; }
+
+  .checklist { background: #0a0a14; border-left: 3px solid #4CAF50;
+               padding: 10px 14px; margin-top: 14px; font-size: 11px; color: #667; line-height: 2; }
+  .checklist b { color: #4CAF50; }
+</style>
+</head>
+<body>
+
+<h1>💾 Save 升级 + 清场检测 验收面板</h1>
+<p class="sub">V1.0 第7+8步 · schema v2 · meta 字段 · 清场检测模拟</p>
+
+<div class="row">
+
+  <!-- 左：Save Meta 展示 -->
+  <div class="panel">
+    <h2>渡劫档案（Save.meta）</h2>
+    <div id="meta-grid" class="meta-grid"></div>
+    <div style="font-size:10px;color:#445;margin-bottom:6px">累计战斗统计</div>
+    <div id="lifetime-stats" style="font-size:10px;color:#556;line-height:1.8"></div>
+    <div class="btn-row">
+      <button class="btn gold" onclick="simVictory()">模拟通关 (+100印记)</button>
+      <button class="btn red"  onclick="simDefeat()">模拟死亡 (+30印记)</button>
+      <button class="btn" onclick="simVictoryWithRelics()">通关+法宝数据</button>
+      <button class="btn red" onclick="clearSave()">⚠ 清档重置</button>
+    </div>
+  </div>
+
+  <!-- 中：清场检测模拟 -->
+  <div class="panel">
+    <h2>清场检测模拟（RunManager.checkClear）</h2>
+    <div style="font-size:10px;color:#556;margin-bottom:8px">
+      当前房间类型：<span id="room-type" style="color:#AAEEFF">—</span>
+      &nbsp;|&nbsp; 清场条件：<span id="clear-cond" style="color:#FFD080">—</span>
+    </div>
+
+    <div style="font-size:10px;color:#445;margin-bottom:4px">敌人列表（点击杀死）：</div>
+    <div id="enemy-row" class="enemy-row"></div>
+
+    <div style="font-size:10px;color:#445;margin:8px 0 4px">Boss 状态：</div>
+    <div style="display:flex;gap:6px;">
+      <button class="btn green" onclick="setBossState('idle')">alive</button>
+      <button class="btn red"   onclick="setBossState('dead')">dead</button>
+    </div>
+    <div style="margin-top:6px;font-size:11px">
+      Boss 状态：<span id="boss-state" style="color:#AAEEFF">idle</span>
+    </div>
+
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn" onclick="startCombatRoom()">进入战斗房间</button>
+      <button class="btn" onclick="startBossRoom()">进入Boss房间</button>
+      <button class="btn gold" onclick="killAllEnemies()">全部击杀（测试自动清场）</button>
+    </div>
+    <div style="margin-top:8px;font-size:10px;color:#556">
+      RunManager状态：<span id="rm-state" style="color:#AAEEFF">idle</span>
+    </div>
+  </div>
+
+  <!-- 右：事件日志 -->
+  <div class="panel" style="min-width:260px;max-width:300px">
+    <h2>事件日志</h2>
+    <div id="log" class="log"></div>
+    <div class="btn-row" style="margin-top:8px">
+      <button class="btn" onclick="document.getElementById('log').innerHTML=''">清空日志</button>
+      <button class="btn" onclick="dumpAll()">Dump 全部</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="checklist">
+  <b>第7+8步 验收标准：</b><br>
+  ✅ 1. Save schema v2：load() 返回对象包含 meta.seals / meta.totalRuns 等字段<br>
+  ✅ 2. 点"模拟通关" → seals+100，totalRuns+1，totalVictories+1，tribulation+1<br>
+  ✅ 3. 点"模拟死亡" → seals+30，totalDeaths+1，deathCount+1<br>
+  ✅ 4. 刷新页面后数据依然存在（LocalStorage 持久化）<br>
+  ✅ 5. "通关+法宝数据" → lifetimeStats 累计递增<br>
+  ✅ 6. 清档后所有数值归零<br>
+  ✅ 7. 清场检测：战斗房间 kill_all，全部敌人死亡 → run:room_clear 事件触发<br>
+  ✅ 8. 清场检测：Boss房间 kill_boss，setBossState('dead') → run:room_clear 触发<br>
+  ✅ 9. 宝库房（clearCondition=auto）进入即立即清场<br>
+  ✅ 10. 无控制台报错
+</div>
+
+<script src="../core/event_bus.js"></script>
+<script src="../core/save_system.js"></script>
+<script src="../core/relic_system.js"></script>
+<script src="../levels/level_2.js"></script>
+<script src="../levels/level_3.js"></script>
+<script src="../core/run_manager.js"></script>
+
+<script>
+// ── mock 全局 ──
+window.player      = { hp: 10000 };
+window.playerHp    = 10000; window.playerMaxHp = 10000;
+window.boss        = { state: 'idle' };
+window.GAME_STATE  = 'playing';
+window.DEF_PARRY_WINDOW = 0.18;
+window.role3       = { MAX_SWORDS: 8 };
+
+// ── 日志 ──
+function log(msg, cls){
+  var box = document.getElementById('log');
+  var d = document.createElement('div');
+  d.className = 'l ' + (cls || '');
+  var ts = new Date().toLocaleTimeString('zh', {hour12:false});
+  d.textContent = '['+ts+'] '+msg;
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ── Events 监听 ──
+Events.on('run:room_clear',    function(d){ log('✓ 房间清场: '+d.room.label+' ('+d.room.type+')', 'good'); refreshRM(); });
+Events.on('run:room_entered',  function(d){ log('🚪 进入房间: '+d.room.label, 'info'); refreshRM(); });
+Events.on('run:ended',         function(d){ log('🏁 局结束: '+d.outcome, d.outcome==='victory'?'good':'warn'); refreshRM(); });
+Events.on('run:show_relic_select', function(d){ log('💎 法宝选择弹出（测试自动跳过）', 'info'); if(d.onSkip) d.onSkip(); });
+Events.on('run:spawn_enemies', function(d){ log('👾 刷怪 '+d.spawns.length+'个', 'info'); });
+Events.on('run:spawn_boss',    function(d){ log('🐲 Boss召唤: '+d.bossSpawn.type, 'warn'); });
+
+// ── Meta 刷新 ──
+function refreshMeta(){
+  var m = Save.getMeta();
+  var grid = document.getElementById('meta-grid');
+  var fields = [
+    ['seals',          '渡劫印记'],
+    ['totalRuns',      '总局数'],
+    ['totalVictories', '通关次数'],
+    ['totalDeaths',    '死亡次数'],
+    ['tribulation',    '渡劫层数'],
+    [null,             'Lucia击杀: '+(m.bossKills&&m.bossKills.lucia||0)]
+  ];
+  grid.innerHTML = fields.map(function(f){
+    var val = f[0] ? (m[f[0]] || 0) : '';
+    var label = f[1];
+    if(f[0]) return '<div class="meta-item"><div class="val">'+val+'</div><div class="key">'+label+'</div></div>';
+    return '<div class="meta-item" style="grid-column:span 2"><div class="key" style="color:#AAEEFF;font-size:11px">'+label+'</div></div>';
+  }).join('');
+
+  var ls = m.lifetimeStats || {};
+  document.getElementById('lifetime-stats').innerHTML =
+    '飞剑命中: '+( ls.swordHits||0)+'　格挡: '+(ls.blocks||0)+'　冲刺: '+(ls.dashHits||0)+'　道法: '+(ls.combosTriggered||0);
+}
+
+function refreshRM(){
+  document.getElementById('rm-state').textContent = RunManager.getState();
+}
+
+// ── Save 操作 ──
+function simVictory(){
+  Save.recordRun({ victory:true, sealsEarned:100, bossKilled:'lucia', relicStats:{} });
+  log('局结束: 通关 +100印记', 'good');
+  refreshMeta();
+}
+function simDefeat(){
+  Save.recordRun({ victory:false, sealsEarned:30, relicStats:{} });
+  log('局结束: 死亡 +30印记', 'warn');
+  refreshMeta();
+}
+function simVictoryWithRelics(){
+  Save.recordRun({
+    victory: true, sealsEarned: 100, bossKilled: 'lucia',
+    relicStats: { relicHits:42, blocksTriggered:8, dashHits:5, combosTrigered:2 }
+  });
+  log('局结束: 通关+法宝数据写入', 'good');
+  refreshMeta();
+}
+function clearSave(){
+  if(!confirm('确认清档？所有 Meta 进度将重置')) return;
+  Save.clear();
+  log('⚠ 存档已清除', 'warn');
+  refreshMeta();
+}
+
+// ── 清场检测模拟 ──
+var mockEnemies = [];
+var mockBossState = 'idle';
+
+function makeEnemy(id){
+  return { id: id, state: 'idle', hp: 10 };
+}
+
+function startCombatRoom(){
+  mockEnemies = [makeEnemy('a'), makeEnemy('b'), makeEnemy('c')];
+  mockBossState = 'idle';
+  RelicManager.reset();
+  RunManager.reset();
+  RunManager._sequence = ROOM_SEQUENCES.standard.slice(0, 1); // 只取第1个战斗房
+  RunManager._roomIndex = 0;
+  RunManager._state = 'in_room';
+  renderEnemies();
+  document.getElementById('room-type').textContent = 'combat';
+  document.getElementById('clear-cond').textContent = 'kill_all';
+  log('进入战斗房间（3个敌人），击杀所有触发清场', 'info');
+}
+
+function startBossRoom(){
+  mockEnemies = [];
+  mockBossState = 'idle';
+  window.boss.state = 'idle';
+  RelicManager.reset();
+  RunManager.reset();
+  RunManager._sequence = [ROOM_SEQUENCES.standard[3]]; // Boss房
+  RunManager._roomIndex = 0;
+  RunManager._state = 'boss';
+  RunManager._bossAlive = true;
+  renderEnemies();
+  document.getElementById('room-type').textContent = 'boss';
+  document.getElementById('clear-cond').textContent = 'kill_boss';
+  log('进入Boss房间，将boss设为dead触发清场', 'info');
+}
+
+function setBossState(state){
+  mockBossState = state;
+  window.boss.state = state;
+  document.getElementById('boss-state').textContent = state;
+  log('Boss状态 → ' + state, state==='dead'?'warn':'info');
+  // 手动触发检测
+  RunManager.checkClear(mockEnemies, state);
+  refreshRM();
+}
+
+function killAllEnemies(){
+  mockEnemies.forEach(function(e){ e.state = 'dead'; });
+  renderEnemies();
+  log('全部敌人已击杀，触发 checkClear', 'good');
+  RunManager.checkClear(mockEnemies, mockBossState);
+  refreshRM();
+}
+
+function renderEnemies(){
+  var row = document.getElementById('enemy-row');
+  row.innerHTML = '';
+  if(mockEnemies.length === 0){
+    row.innerHTML = '<span style="color:#334;font-size:10px">无敌人</span>';
+    return;
+  }
+  mockEnemies.forEach(function(e, i){
+    var chip = document.createElement('div');
+    chip.className = 'enemy-chip' + (e.state==='dead'?' dead':'');
+    chip.textContent = '敌人' + (i+1) + (e.state==='dead'?' ☠':'');
+    chip.onclick = function(){
+      e.state = 'dead';
+      renderEnemies();
+      log('击杀敌人'+(i+1), 'info');
+      RunManager.checkClear(mockEnemies, mockBossState);
+      refreshRM();
+    };
+    row.appendChild(chip);
+  });
+}
+
+// ── Dump ──
+function dumpAll(){
+  console.group('=== Save + RunManager Dump ===');
+  console.log('Save.load():', JSON.stringify(Save.load(), null, 2));
+  RunManager.debugDump();
+  console.groupEnd();
+  log('已在控制台输出完整 Dump', 'info');
+}
+
+// ── 初始化 ──
+log('Save schema v'+Save.SCHEMA_VERSION+' 加载完成', 'good');
+var loaded = Save.load();
+log('meta.seals='+loaded.meta.seals+' totalRuns='+loaded.meta.totalRuns, 'info');
+refreshMeta();
+refreshRM();
+</script>
+</body>
+</html>
