@@ -31,34 +31,47 @@
       {
         type: 'combat',
         label: '试炼·初境',
-        levelId: 2,
+        levelId: 1,
         enemies: [
-          { type: 'archer', x: 14 * 24, y: 24 * 24 },
-          { type: 'archer', x: 26 * 24, y: 24 * 24 },
+          // 左下大平台 3只
+          { type: 'archer', x: 10 * 24, y: 32 * 24 },
+          { type: 'archer', x: 18 * 24, y: 36 * 24 },
+          { type: 'archer', x: 24 * 24, y: 28 * 24 },
+          // 右上平台 3只
+          { type: 'archer', x: 48 * 24, y: 14 * 24 },
+          { type: 'archer', x: 56 * 24, y: 18 * 24 },
+          { type: 'archer', x: 44 * 24, y: 12 * 24 },
         ],
         rewardCount: 3,
-        clearCondition: 'kill_all',   // kill_all | timed | survive
+        clearCondition: 'kill_all',
       },
       {
         type: 'treasure',
         label: '法宝秘藏',
-        levelId: 2,
+        levelId: 1,
         enemies: [],
         rewardCount: 3,
-        clearCondition: 'auto',       // 进入即完成，显示奖励
+        clearCondition: 'auto',
       },
       {
         type: 'elite',
         label: '试炼·中境',
-        levelId: 2,
+        levelId: 1,
         enemies: [
-          { type: 'archer', x: 14 * 24, y: 24 * 24 },
-          { type: 'archer', x: 26 * 24, y: 24 * 24 },
-          { type: 'archer', x: 45 * 24, y: 23 * 24 },
+          // 左下平台 4只
+          { type: 'archer', x: 8  * 24, y: 30 * 24 },
+          { type: 'archer', x: 14 * 24, y: 38 * 24 },
+          { type: 'archer', x: 22 * 24, y: 34 * 24 },
+          { type: 'archer', x: 26 * 24, y: 28 * 24 },
+          // 右上平台 4只
+          { type: 'archer', x: 42 * 24, y: 10 * 24 },
+          { type: 'archer', x: 52 * 24, y: 16 * 24 },
+          { type: 'archer', x: 60 * 24, y: 20 * 24 },
+          { type: 'archer', x: 48 * 24, y: 22 * 24 },
         ],
         rewardCount: 3,
         clearCondition: 'kill_all',
-        eliteBonus: true,             // 精英房：奖励额外显示1个rare法宝
+        eliteBonus: true,
       },
       {
         type: 'boss',

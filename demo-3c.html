@@ -547,6 +547,7 @@ window.addEventListener('unhandledrejection',function(e){
 </script>
 <script src="ground_mask.js"></script>
 <script src="ground2_mask.js"></script>
+<script src="ground_map1_mask.js"></script>
 <script src="levels/level_2.js"></script>
 <script src="levels/level_3.js"></script>
 <script src="map_atlas.js"></script>
@@ -827,22 +828,20 @@ function initMapImage(onReady){
   const mc = mapCanvas.getContext('2d');
   mc.imageSmoothingEnabled = false;
 
-  // 关卡选择：RunManager 模式默认 level_2；旧流程 level_3；?level=2 强制切 2
+  // 关卡选择：RunManager 模式默认 map1；旧流程 level_3；?level=2 切旧地图
   const _lvParam = (new URLSearchParams(location.search)).get('level');
-  if(_lvParam === '2' || (!window.LUCIA_START_PHASE && typeof LEVEL_2 !== 'undefined')){
-    // level_2（小怪房）：用 ground_combat.png + GROUND_MASK
-    // GROUND_MASK 就是为这张图手工标注的可走区域，直接复用，不用 level_2.mapData 覆盖
-    if(typeof GROUND_MASK !== 'undefined'){
-      window._activeGroundMask  = GROUND_MASK;
-      window._activeGroundMaskW = GROUND_MASK_W;
-      window._activeGroundMaskH = GROUND_MASK_H;
+  if(_lvParam === '2' || (!window.LUCIA_START_PHASE && typeof MAP1_MASK !== 'undefined')){
+    // map1（天空之城，小怪房）
+    if(typeof MAP1_MASK !== 'undefined'){
+      window._activeGroundMask  = MAP1_MASK;
+      window._activeGroundMaskW = MAP1_MASK_W;
+      window._activeGroundMaskH = MAP1_MASK_H;
     }
-    window._activeGroundUrl = 'ground_combat.png';
-    // 不设 _pendingMapData，让 applyGroundCollision 直接用 GROUND_MASK 生成碰撞
-    // 出生点：用 GROUND_MASK 里已知可走的区域（左侧大厅中心附近）
-    player.x = 10 * 24;   // tile(10,28)，左侧大室中央（GROUND_MASK 已知可走）
-    player.y = 28 * 24;
-    console.log('[level] 关卡 2 — 熔火回廊（小怪房）');
+    window._activeGroundUrl = 'ground_map1.png';
+    // 出生点：左下大平台中央
+    player.x = 14 * 24;
+    player.y = 34 * 24;
+    console.log('[level] map1 — 天空之城（小怪房）');
   } else if(typeof LEVEL_3 !== 'undefined'){
     // 关卡 3 默认：把 mapData 写入碰撞表
     window._activeGroundUrl = 'ground3_clean.png';
@@ -1539,16 +1538,19 @@ window._loadLevel = function(levelData){
         map[ty][tx] = md[ty][tx];
   }
 
-  // 更新 ground mask（影响 applyGroundCollision / _isWalkable）
-  // level_2 小怪房 和 level_3 boss 房都用同一套 GROUND_MASK（同图集）
-  if(typeof GROUND_MASK !== 'undefined'){
+  // 更新 ground mask
+  if(!isL3 && typeof MAP1_MASK !== 'undefined'){
+    window._activeGroundMask  = MAP1_MASK;
+    window._activeGroundMaskW = MAP1_MASK_W;
+    window._activeGroundMaskH = MAP1_MASK_H;
+  } else if(isL3 && typeof GROUND_MASK !== 'undefined'){
     window._activeGroundMask  = GROUND_MASK;
     window._activeGroundMaskW = GROUND_MASK_W;
     window._activeGroundMaskH = GROUND_MASK_H;
   }
 
   // 3. 切换 ground 图 + 重建 mapCanvas
-  const groundUrl = isL3 ? 'ground3_clean.png' : 'ground_combat.png';
+  const groundUrl = isL3 ? 'ground3_clean.png' : 'ground_map1.png';
   mapReady = false;
   const mc = mapCanvas ? mapCanvas.getContext('2d') : null;
   if(!mc){ console.warn('[_loadLevel] mapCanvas 未初始化'); mapReady = true; return; }
@@ -2340,7 +2342,15 @@ function updateEnemies(dt){
 
     // ── archer_enemy 自带 update 方法，直接调用 ──
     if(e.isArcher && typeof e.update === 'function'){
+      const wasDead = e.state === 'dead';
       e.update(dt, player);
+      // 刚死亡：给玩家一把飞剑（击杀奖励）
+      if(!wasDead && e.state === 'dead'){
+        if(currentChar === 3 && window.role3 && window.role3SwordsAPI){
+          window.role3.gainSword && window.role3.gainSword();
+        }
+        Events && Events.emit('enemy:killed', { x: e.x, y: e.y });
+      }
       // 死亡淡出后移除
       if(e.state === 'dead' && e.deadAge > 1.2) enemies.splice(i, 1);
       continue;
@@ -5440,22 +5450,15 @@ function loop(ts){
     );
   }
 
-  // ── 被动：每秒获得一把飞剑（最多 MAX_SWORDS）──
+  // ── 飞剑初始化（开局给 3 把环绕剑）──
+  // 被动每秒获剑已移除：飞剑通过击杀敌人获得，不自动增长
   if(currentChar === 3 && window.role3 && window.role3SwordsAPI){
-    // 首次进入：开局给 3 把环绕剑
     if(!window._r3InitDone){
       window._r3InitDone = true;
       const have = window.role3.swordCount();
       for(let i = have; i < 3; i++){
         window.role3SwordsAPI.addOrbit({ phase: i / 3 * Math.PI * 2, r: 40, h: -36 });
       }
-    }
-    if(!window._r3PassiveAcc) window._r3PassiveAcc = 0;
-    window._r3PassiveAcc += dt;
-    if(window._r3PassiveAcc >= 1.0){
-      window._r3PassiveAcc -= 1.0;
-      // 用正规 API 加一把 orbit 剑（受 MAX_SWORDS 限制）
-      window.role3.gainSword && window.role3.gainSword();
     }
   }
 
@@ -5562,16 +5565,16 @@ window.LUCIA_START_PHASE = (_directBoss || typeof window.RunManager === 'undefin
 if(window.LUCIA_START_PHASE){
   window._activeGroundUrl = 'ground3_clean.png';
 } else {
-  // RunManager 流程：初始加载原始熔岩地形（小怪房）
-  window._activeGroundUrl = 'ground_combat.png';
-  if(typeof GROUND_MASK !== 'undefined'){
-    window._activeGroundMask  = GROUND_MASK;
-    window._activeGroundMaskW = GROUND_MASK_W;
-    window._activeGroundMaskH = GROUND_MASK_H;
+  // RunManager 流程：初始加载 map1（天空之城，小怪房）
+  window._activeGroundUrl = 'ground_map1.png';
+  if(typeof MAP1_MASK !== 'undefined'){
+    window._activeGroundMask  = MAP1_MASK;
+    window._activeGroundMaskW = MAP1_MASK_W;
+    window._activeGroundMaskH = MAP1_MASK_H;
   }
-  // 出生点：左侧大室中央（与 LEVEL_2.spawnPoint 一致）
-  player.x = 10 * 24;
-  player.y = 28 * 24;
+  // 出生点：左下大平台中央
+  player.x = 14 * 24;
+  player.y = 34 * 24;
 }
 buildMap();
 // 默认不开启 AI，由用户点击按钮（左上 AI 按钮 / Tab 键）启用
