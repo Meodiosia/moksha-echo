@@ -3952,8 +3952,8 @@ const afterTrail=[]; // 冲刺残影
 // ── 更新 ──────────────────────────────────
 let elapsed=0;
 function update(dt){
-  // menu 状态：完全不运行游戏逻辑
-  if(window.GAME_STATE === 'menu') return;
+  // menu / reward 状态：完全不运行游戏逻辑（reward = 法宝选择暂停）
+  if(window.GAME_STATE === 'menu' || window.GAME_STATE === 'reward') return;
 
   // 游戏结束（胜利/失败）：停止玩家移动 + 减速，但继续跑特效
   if(window.GAME_STATE && window.GAME_STATE !== 'playing'){
@@ -5382,6 +5382,13 @@ function draw(){
   if(window.SkillHUD && typeof window.SkillHUD.render === 'function'){
     window.SkillHUD.render(ctx);
   }
+  // ── 调试：显示 GAME_STATE（临时）──
+  ctx.save();
+  ctx.font = 'bold 11px monospace';
+  ctx.fillStyle = 'rgba(255,255,100,0.85)';
+  ctx.textAlign = 'left';
+  ctx.fillText('STATE:' + (window.GAME_STATE||'?') + ' RM:' + (window.RunManager ? window.RunManager.getState() : 'N/A'), 10, 20);
+  ctx.restore();
 }
 
 // ── 主循环 ────────────────────────────────

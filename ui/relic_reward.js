@@ -147,8 +147,8 @@
     var ov = getOverlay();
     ov.innerHTML = '';
 
-    // 暂停游戏
-    if(root.GAME_STATE === 'playing') root.GAME_STATE = 'reward';
+    // 暂停游戏（无条件，不管当前是什么状态）
+    root.GAME_STATE = 'reward';
 
     // 标题
     var title = document.createElement('div');
@@ -201,8 +201,7 @@
     skip.addEventListener('click', function(){
       hide();
       if(root.GAME_STATE === 'reward') root.GAME_STATE = 'playing';
-      if(typeof onSkip === 'function') onSkip();
-    });
+      if(typeof onSkip === 'function') onSkip();    });
     ov.appendChild(skip);
 
     // 淡入
@@ -217,8 +216,8 @@
     // 装备法宝
     if(root.RelicManager) root.RelicManager.equip(id);
 
-    // 恢复游戏
-    if(root.GAME_STATE === 'reward') root.GAME_STATE = 'playing';
+    // 恢复游戏（无条件）
+    root.GAME_STATE = 'playing';
 
     if(typeof onSelect === 'function') onSelect(id);
 
