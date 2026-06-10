@@ -1,0 +1,4 @@
+# node_modules 等临时文件
+node_modules/
+__pycache__/
+*.pyc
